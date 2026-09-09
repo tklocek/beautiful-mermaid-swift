@@ -30,7 +30,8 @@ open class original_src_sequence_types {
         lineStyle: String = "solid",
         arrowHead: String = "open",
         activate: Bool = false,
-        deactivate: Bool = false
+        deactivate: Bool = false,
+        sequenceNumber: Int? = nil
     ) -> SequenceMessage {
         SequenceMessage(
             from: from,
@@ -39,7 +40,8 @@ open class original_src_sequence_types {
             lineStyle: lineStyle,
             arrowHead: arrowHead,
             activate: activate,
-            deactivate: deactivate
+            deactivate: deactivate,
+            sequenceNumber: sequenceNumber
         )
     }
 

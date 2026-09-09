@@ -23,6 +23,8 @@ public struct SequenceMessage: Sendable {
     public var arrowHead: String
     public var activate: Bool
     public var deactivate: Bool
+    /// 1-based index assigned by `autonumber`; nil when autonumbering is off.
+    public var sequenceNumber: Int? = nil
 }
 
 public struct SequenceBlockDivider: Sendable {
@@ -83,6 +85,8 @@ public struct PositionedSequenceMessage: Sendable {
     public var x2: Double
     public var y: Double
     public var isSelf: Bool
+    /// 1-based index assigned by `autonumber`; nil when autonumbering is off.
+    public var sequenceNumber: Int? = nil
 }
 
 public struct SequenceActivation: Sendable {
@@ -152,6 +156,10 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
     var diagram = SequenceDiagram(actors: [], messages: [], blocks: [], notes: [])
     var actorIds = Set<String>()
     var blockStack: [_OpenBlock] = []
+    // nil = autonumbering off. Mermaid allows `autonumber`, `autonumber <start>`,
+    // `autonumber <start> <step>` and `autonumber off`, switchable mid-diagram.
+    var autonumberNext: Int?
+    var autonumberStep = 1
 
     if lines.count <= 1 {
         return diagram
@@ -160,6 +168,18 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
     for rawLine in lines.dropFirst() {
         let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
         if line.isEmpty {
+            continue
+        }
+
+        if let m = _match(#"^autonumber(?:\s+(\S+))?(?:\s+(\S+))?\s*$"#, line, caseInsensitive: true) {
+            let start = m.count > 1 ? m[1] : ""
+            let step = m.count > 2 ? m[2] : ""
+            if start.lowercased() == "off" {
+                autonumberNext = nil
+            } else {
+                autonumberNext = Int(start) ?? 1
+                autonumberStep = Int(step) ?? 1
+            }
             continue
         }
 
@@ -230,7 +250,11 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             continue
         }
 
-        if let msg = _parseSequenceMessage(line) {
+        if var msg = _parseSequenceMessage(line) {
+            if let number = autonumberNext {
+                msg.sequenceNumber = number
+                autonumberNext = number + autonumberStep
+            }
             _ensureActor(&diagram, &actorIds, msg.from)
             _ensureActor(&diagram, &actorIds, msg.to)
             diagram.messages.append(msg)

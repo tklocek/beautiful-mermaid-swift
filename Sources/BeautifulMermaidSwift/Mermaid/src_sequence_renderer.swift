@@ -134,13 +134,22 @@ private func renderActivation(_ activation: SequenceActivation) -> String {
     "<rect class=\"activation\" data-actor=\"\(escapeAttr(activation.actorId))\" x=\"\(activation.x)\" y=\"\(activation.topY)\" width=\"\(activation.width)\" height=\"\(activation.bottomY - activation.topY)\" fill=\"var(--_node-fill)\" stroke=\"var(--_node-stroke)\" stroke-width=\"\(original_src_styles.STROKE_WIDTHS.innerBox)\" />"
 }
 
+private func renderSequenceNumber(_ number: Int, cx: Double, cy: Double) -> String {
+    let radius = 9.0
+    let fontSize = original_src_styles.FONT_SIZES.edgeLabel
+    return "  <g class=\"sequence-number\" data-number=\"\(number)\">"
+        + "<circle cx=\"\(cx)\" cy=\"\(cy)\" r=\"\(radius)\" fill=\"var(--_node-fill)\" stroke=\"var(--_node-stroke)\" stroke-width=\"\(original_src_styles.STROKE_WIDTHS.innerBox)\" />"
+        + "<text x=\"\(cx)\" y=\"\(cy)\" font-size=\"\(fontSize)\" text-anchor=\"middle\" dominant-baseline=\"central\" font-weight=\"\(original_src_styles.FONT_WEIGHTS.edgeLabel)\" fill=\"var(--_text-muted)\">\(number)</text>"
+        + "</g>"
+}
+
 private func renderMessage(_ msg: PositionedSequenceMessage) -> String {
     var parts: [String] = []
     let dashArray = msg.lineStyle == "dashed" ? " stroke-dasharray=\"6 4\"" : ""
     let markerId = msg.arrowHead == "filled" ? "seq-arrow" : "seq-arrow-open"
 
     parts.append(
-        "<g class=\"message\" data-from=\"\(escapeAttr(msg.from))\" data-to=\"\(escapeAttr(msg.to))\" data-label=\"\(escapeAttr(msg.label))\" data-line-style=\"\(msg.lineStyle)\" data-arrow-head=\"\(msg.arrowHead)\" data-self=\"\(msg.isSelf)\">"
+        "<g class=\"message\" data-from=\"\(escapeAttr(msg.from))\" data-to=\"\(escapeAttr(msg.to))\" data-label=\"\(escapeAttr(msg.label))\" data-line-style=\"\(msg.lineStyle)\" data-arrow-head=\"\(msg.arrowHead)\" data-self=\"\(msg.isSelf)\"\(msg.sequenceNumber.map { " data-sequence-number=\"\($0)\"" } ?? "")>"
     )
 
     if msg.isSelf {
@@ -173,6 +182,10 @@ private func renderMessage(_ msg: PositionedSequenceMessage) -> String {
                 attrs: "font-size=\"\(original_src_styles.FONT_SIZES.edgeLabel)\" text-anchor=\"middle\" font-weight=\"\(original_src_styles.FONT_WEIGHTS.edgeLabel)\" fill=\"var(--_text-muted)\""
             )
         )
+    }
+
+    if let number = msg.sequenceNumber {
+        parts.append(renderSequenceNumber(number, cx: msg.x1, cy: msg.y))
     }
 
     parts.append("</g>")
