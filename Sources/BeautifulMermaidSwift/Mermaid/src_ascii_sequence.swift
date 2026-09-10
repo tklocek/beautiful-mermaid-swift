@@ -132,7 +132,7 @@ public func renderSequenceAscii(
         AsciiSequenceMessage(
             from: message.from,
             to: message.to,
-            label: message.label,
+            label: message.sequenceNumber.map { "\($0). \(message.label)" } ?? message.label,
             lineStyle: message.lineStyle,
             arrowHead: message.arrowHead
         )
