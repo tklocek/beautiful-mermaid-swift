@@ -16,6 +16,15 @@ private enum _SEQ {
     static let blockPadBottom: Double = 8
     static let blockHeaderExtra: Double = 28
     static let dividerExtra: Double = 24
+    /// Multiplier covering the gap between the estimator and the platform's real text
+    /// metrics. Measured at 1.12-1.17 over a range of block tab labels; 1.25 leaves room.
+    static let textMetricsSafety: Double = 1.25
+    /// How far each level of nesting steps a block frame inwards.
+    static let blockNestingInset: Double = 10
+    /// Narrowest a nested frame may be squeezed to by insetting.
+    static let blockMinNestedWidth: Double = 60
+    /// Narrowest a block frame may be, so a lone self-message still frames sensibly.
+    static let blockMinWidth: Double = 120
     /// Room above the participant headers for a `box` label.
     static let boxLabelHeight: Double = 20
     /// Padding between a `box` and the headers it surrounds.
@@ -380,8 +389,27 @@ private func _layoutSequenceDiagramEntry(
 
         let minIdx = involvedActors.min() ?? 0
         let maxIdx = involvedActors.max() ?? max(0, diagram.actors.count - 1)
-        let blockLeft = actorCenterX[minIdx] - actorWidths[minIdx] / 2 - _SEQ.blockPadX
-        let blockRight = actorCenterX[maxIdx] + actorWidths[maxIdx] / 2 + _SEQ.blockPadX
+        // The span the actors give, before nesting is taken into account.
+        let spanLeft = actorCenterX[minIdx] - actorWidths[minIdx] / 2 - _SEQ.blockPadX
+        var spanRight = actorCenterX[maxIdx] + actorWidths[maxIdx] / 2 + _SEQ.blockPadX
+
+        // A lone self-message gives a frame barely wider than one lifeline, which reads as
+        // cramped rather than deliberate. Applied to the span *before* insetting: applied
+        // after, two nested frames both clamped to the minimum came out the same width, and
+        // the inner one then stuck out past its parent on the right.
+        if spanRight - spanLeft < _SEQ.blockMinWidth {
+            spanRight = spanLeft + _SEQ.blockMinWidth
+        }
+
+        // A nested block deriving its span from the same actors as its parent came out with
+        // identical edges, so the nesting was invisible except as a vertical offset. Each
+        // level steps inwards, and never past the point of inverting.
+        let nestingInset = min(
+            Double(block.depth) * _SEQ.blockNestingInset,
+            max(0, (spanRight - spanLeft - _SEQ.blockMinNestedWidth) / 2)
+        )
+        let blockLeft = spanLeft + nestingInset
+        let blockRight = spanRight - nestingInset
 
         let positionedDividers: [PositionedSequenceBlockDivider] = block.dividers.map { divider in
             let msg = divider.index < messages.count ? messages[divider.index] : nil
@@ -423,11 +451,18 @@ private func _layoutSequenceDiagramEntry(
         var enclosingRight = blockRight
 
         let tabText = "\(block.type)\(block.label.isEmpty ? "" : " [\(block.label)]")"
+        // `estimateTextWidth` is a per-character heuristic shared by the whole ported
+        // layout, and it runs short of the platform's real metrics — measured at 12-17%
+        // across a range of tab labels. The renderers draw the tab from those real metrics,
+        // so a frame reserving only the estimate is overhung by its own tab. The estimator
+        // is not the place to fix that: every diagram kind depends on it, and it matches
+        // the TypeScript original. Compensate here, where the frame is sized, and leave a
+        // frame slightly wider than strictly needed rather than a tab hanging out of it.
         let tabWidth = _labelWidth(
             tabText,
             original_src_styles.FONT_SIZES.edgeLabel,
             original_src_styles.FONT_WEIGHTS.groupHeader
-        ) + _SEQ.blockTabPadX
+        ) * _SEQ.textMetricsSafety + _SEQ.blockTabPadX
         enclosingRight = max(enclosingRight, blockLeft + tabWidth)
 
         if block.startIndex <= block.endIndex {
