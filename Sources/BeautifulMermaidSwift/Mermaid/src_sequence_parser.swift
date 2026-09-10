@@ -7,6 +7,23 @@ public struct SequenceDiagram: Sendable {
     public var messages: [SequenceMessage]
     public var blocks: [SequenceBlock]
     public var notes: [SequenceNote]
+    /// `activate` / `deactivate` written as statements of their own, rather than as the
+    /// `+` and `-` suffixes on an arrow. Mermaid treats the two spellings as equals.
+    public var activationEvents: [SequenceActivationEvent] = []
+}
+
+/// An `activate X` or `deactivate X` line, kept in the order it was written.
+public struct SequenceActivationEvent: Sendable {
+    public var actorId: String
+    public var isActivate: Bool
+    /// Index of the last message before this line; -1 when it precedes every message.
+    public var afterIndex: Int
+
+    public init(actorId: String, isActivate: Bool, afterIndex: Int) {
+        self.actorId = actorId
+        self.isActivate = isActivate
+        self.afterIndex = afterIndex
+    }
 }
 
 public struct SequenceActor: Sendable {
@@ -180,6 +197,19 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
                 autonumberNext = Int(start) ?? 1
                 autonumberStep = Int(step) ?? 1
             }
+            continue
+        }
+
+        if let m = _match(#"^(activate|deactivate)\s+(\S+)\s*$"#, line, caseInsensitive: true) {
+            let id = m[2]
+            _ensureActor(&diagram, &actorIds, id)
+            diagram.activationEvents.append(
+                SequenceActivationEvent(
+                    actorId: id,
+                    isActivate: m[1].lowercased() == "activate",
+                    afterIndex: diagram.messages.count - 1
+                )
+            )
             continue
         }
 

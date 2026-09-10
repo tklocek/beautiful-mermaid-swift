@@ -148,6 +148,41 @@ private func _layoutSequenceDiagramEntry(
     var activations: [SequenceActivation] = []
     let nestingOffset = 4.0
 
+    func openActivation(_ actorId: String, at y: Double) {
+        var stack = activationStacks[actorId] ?? []
+        stack.append((startY: y, depth: stack.count))
+        activationStacks[actorId] = stack
+    }
+
+    func closeActivation(_ actorId: String, at y: Double) {
+        var stack = activationStacks[actorId] ?? []
+        guard !stack.isEmpty else { return }
+        let top = stack.removeLast()
+        activationStacks[actorId] = stack
+        let idx = actorIndex[actorId] ?? 0
+        activations.append(
+            SequenceActivation(
+                actorId: actorId,
+                x: actorCenterX[idx] - _SEQ.activationWidth / 2 + Double(top.depth) * nestingOffset,
+                topY: top.startY,
+                bottomY: y,
+                width: _SEQ.activationWidth
+            )
+        )
+    }
+
+    /// `activate` / `deactivate` statements take effect where they were written, so they
+    /// are applied against the row of the message that follows them.
+    func applyActivationEvents(after messageIndex: Int, at y: Double) {
+        for event in diagram.activationEvents where event.afterIndex == messageIndex {
+            if event.isActivate {
+                openActivation(event.actorId, at: y)
+            } else {
+                closeActivation(event.actorId, at: y)
+            }
+        }
+    }
+
     for msgIdx in 0..<diagram.messages.count {
         let msg = diagram.messages[msgIdx]
         let fromIdx = actorIndex[msg.from] ?? 0
@@ -179,6 +214,8 @@ private func _layoutSequenceDiagramEntry(
             messageY = max(messageY, requiredY)
         }
 
+        applyActivationEvents(after: msgIdx - 1, at: messageY)
+
         let x1 = actorCenterX[fromIdx]
         let x2 = actorCenterX[toIdx]
 
@@ -198,30 +235,11 @@ private func _layoutSequenceDiagramEntry(
         )
 
         if msg.activate {
-            var stack = activationStacks[msg.to] ?? []
-            let depth = stack.count
-            stack.append((startY: messageY, depth: depth))
-            activationStacks[msg.to] = stack
+            openActivation(msg.to, at: messageY)
         }
 
         if msg.deactivate {
-            var stack = activationStacks[msg.from] ?? []
-            if !stack.isEmpty {
-                let top = stack.removeLast()
-                activationStacks[msg.from] = stack
-
-                let idx = actorIndex[msg.from] ?? 0
-                let xOffset = Double(top.depth) * nestingOffset
-                activations.append(
-                    SequenceActivation(
-                        actorId: msg.from,
-                        x: actorCenterX[idx] - _SEQ.activationWidth / 2 + xOffset,
-                        topY: top.startY,
-                        bottomY: messageY,
-                        width: _SEQ.activationWidth
-                    )
-                )
-            }
+            closeActivation(msg.from, at: messageY)
         }
 
         // A wrapped label is taller than the row was sized for, and its extra lines are
@@ -232,6 +250,8 @@ private func _layoutSequenceDiagramEntry(
         messageY += isSelfMsg ? (_SEQ.selfMessageHeight + _SEQ.messageRowHeight) : _SEQ.messageRowHeight
         if isSelfMsg { messageY += labelGrowth }
     }
+
+    applyActivationEvents(after: diagram.messages.count - 1, at: messageY - _SEQ.messageRowHeight / 2)
 
     for (actorId, stack) in activationStacks {
         for item in stack {

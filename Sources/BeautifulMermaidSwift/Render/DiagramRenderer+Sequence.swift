@@ -49,7 +49,11 @@ extension DiagramRenderer {
 
             // 2. Activation bars
             for act in activations {
-                let actRect = CGRect(x: act.x - act.width / 2, y: act.topY, width: act.width, height: act.bottomY - act.topY)
+                // `act.x` is the bar's left edge: the layout has already taken half the
+                // width off the lifeline's centre. Subtracting it again here shifted every
+                // activation bar half its width to the left, so it hung off the side of
+                // the lifeline instead of straddling it. The SVG renderer never did this.
+                let actRect = CGRect(x: act.x, y: act.topY, width: act.width, height: act.bottomY - act.topY)
                 ctx.setFillColor(self.theme.effectiveSurface().cgColor)
                 ctx.fill(actRect)
                 ctx.setStrokeColor(self.theme.effectiveBorder().cgColor)
