@@ -125,6 +125,87 @@ final class SequenceActivationStatementTests: XCTestCase {
         XCTAssertTrue(positioned.activations.isEmpty)
     }
 
+    // MARK: - Arrows meet the bar, not the lifeline under it
+
+    /// An activation bar covers its lifeline, so an arrow drawn to the lifeline's centre
+    /// ends up buried inside the bar. Arrows terminate on the bar's edge instead — except
+    /// where no bar is open at that row, which still means the lifeline itself.
+
+    private func message(_ label: String, in positioned: PositionedSequenceDiagram) throws -> PositionedSequenceMessage {
+        try XCTUnwrap(positioned.messages.first { $0.label == label })
+    }
+
+    private func lifelineX(_ actorId: String, in positioned: PositionedSequenceDiagram) throws -> Double {
+        try XCTUnwrap(positioned.lifelines.first { $0.actorId == actorId }).x
+    }
+
+    private static let activatedRun = """
+    sequenceDiagram
+        participant U as User
+        participant API
+        participant DB
+        U->>API: before
+        activate API
+        API->>DB: rightwards
+        DB-->>API: leftwards
+        API->>API: self
+        API-->>U: outwards
+        deactivate API
+    """
+
+    func testAnArrowLeavingAnActivatedActorStartsAtTheBarEdge() throws {
+        let positioned = try layout(Self.activatedRun)
+        let bar = try XCTUnwrap(positioned.activations.first { $0.actorId == "API" })
+
+        let rightwards = try message("rightwards", in: positioned)
+        XCTAssertEqual(rightwards.x1, bar.x + bar.width, accuracy: 0.001)
+
+        let outwards = try message("outwards", in: positioned)
+        XCTAssertEqual(outwards.x1, bar.x, accuracy: 0.001, "a leftward arrow leaves the left edge")
+    }
+
+    func testAnArrowArrivingAtAnActivatedActorStopsAtTheBarEdge() throws {
+        let positioned = try layout(Self.activatedRun)
+        let bar = try XCTUnwrap(positioned.activations.first { $0.actorId == "API" })
+
+        let leftwards = try message("leftwards", in: positioned)
+        XCTAssertEqual(leftwards.x2, bar.x + bar.width, accuracy: 0.001)
+    }
+
+    func testWithNoBarOpenTheArrowStillMeetsTheLifeline() throws {
+        let positioned = try layout(Self.activatedRun)
+        let before = try message("before", in: positioned)
+
+        XCTAssertEqual(before.x2, try lifelineX("API", in: positioned), accuracy: 0.001,
+                       "`before` precedes the activation, so there is no bar to meet")
+    }
+
+    func testASelfMessageLeavesAndReturnsOnTheBarEdge() throws {
+        let positioned = try layout(Self.activatedRun)
+        let bar = try XCTUnwrap(positioned.activations.first { $0.actorId == "API" })
+        let selfMessage = try message("self", in: positioned)
+
+        XCTAssertEqual(selfMessage.x1, bar.x + bar.width, accuracy: 0.001)
+        XCTAssertEqual(selfMessage.x2, bar.x + bar.width, accuracy: 0.001)
+    }
+
+    /// An activating arrow creates the bar it points at, so it has to land on it rather
+    /// than pass through where the bar is about to be.
+    func testAnActivatingArrowLandsOnTheBarItOpens() throws {
+        let positioned = try layout("""
+        sequenceDiagram
+            participant U
+            participant API
+            U->>+API: opens it
+            API-->>-U: closes it
+        """)
+        let bar = try XCTUnwrap(positioned.activations.first)
+        let opening = try message("opens it", in: positioned)
+
+        XCTAssertEqual(opening.x2, bar.x, accuracy: 0.001)
+        XCTAssertNotEqual(opening.x2, try lifelineX("API", in: positioned))
+    }
+
     // MARK: - Placement
 
     /// The layout hands over the bar's left edge, having already taken half its width off
