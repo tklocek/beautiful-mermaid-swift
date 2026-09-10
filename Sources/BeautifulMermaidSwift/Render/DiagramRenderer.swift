@@ -96,9 +96,19 @@ public final class DiagramRenderer {
     ) {
         guard !text.isEmpty else { return }
         if text.contains("\n") {
-            // Use a wide rect centered on the point; drawMultilineText will vertically center the text block.
-            let rect = CGRect(x: point.x - 500, y: point.y - 500, width: 1000, height: 1000)
-            labelRenderer.drawMultilineText(text, in: rect, context: context, color: color, font: font, alignment: .center)
+            // The rect only positions the block: drawMultilineText centres it on rect.midY
+            // and aligns each line within rect. So the rect has to be anchored the way the
+            // caller asked, otherwise a left-aligned multiline label ends up centred on its
+            // anchor — which drew wrapped self-message labels straight over their own arrow.
+            let span: CGFloat = 1000
+            let originX: CGFloat
+            switch alignment {
+            case .left: originX = point.x
+            case .right: originX = point.x - span
+            case .center: originX = point.x - span / 2
+            }
+            let rect = CGRect(x: originX, y: point.y - span / 2, width: span, height: span)
+            labelRenderer.drawMultilineText(text, in: rect, context: context, color: color, font: font, alignment: alignment)
         } else {
             labelRenderer.drawText(text, at: point, context: context, color: color, font: font, alignment: alignment)
         }

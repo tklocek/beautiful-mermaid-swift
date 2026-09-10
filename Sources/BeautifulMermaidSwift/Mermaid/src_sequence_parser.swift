@@ -186,7 +186,7 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
         if let m = _match(#"^(participant|actor)\s+(\S+?)(?:\s+as\s+(.+))?$"#, line) {
             let type = m[1].lowercased()
             let id = m[2]
-            let label = _normalizeBrTags((m.count > 3 ? m[3] : "").isEmpty ? id : m[3])
+            let label = _normalizeLineBreaks((m.count > 3 ? m[3] : "").isEmpty ? id : m[3])
             if !actorIds.contains(id) {
                 actorIds.insert(id)
                 diagram.actors.append(SequenceActor(id: id, label: label, type: type))
@@ -197,7 +197,7 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
         if let m = _match(#"^Note\s+(left of|right of|over)\s+([^:]+):\s*(.+)$"#, line, caseInsensitive: true) {
             let positionRaw = m[1].lowercased()
             let actorTokens = m[2].split(separator: ",").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            let text = _brTagsToNewlines(m[3].trimmingCharacters(in: .whitespacesAndNewlines))
+            let text = _normalizeLineBreaks(m[3].trimmingCharacters(in: .whitespacesAndNewlines))
             for id in actorTokens where !id.isEmpty {
                 _ensureActor(&diagram, &actorIds, id)
             }
@@ -217,7 +217,7 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             blockStack.append(
                 _OpenBlock(
                     type: m[1],
-                    label: _normalizeBrTags(m[2].trimmingCharacters(in: .whitespacesAndNewlines)),
+                    label: _normalizeLineBreaks(m[2].trimmingCharacters(in: .whitespacesAndNewlines)),
                     startIndex: diagram.messages.count,
                     dividers: []
                 )
@@ -230,7 +230,7 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             blockStack[blockStack.count - 1].dividers.append(
                 SequenceBlockDivider(
                     index: diagram.messages.count,
-                    label: _normalizeBrTags(m[2].trimmingCharacters(in: .whitespacesAndNewlines))
+                    label: _normalizeLineBreaks(m[2].trimmingCharacters(in: .whitespacesAndNewlines))
                 )
             )
             continue
@@ -281,7 +281,7 @@ private func _buildMessage(from: String, arrow: String, activation: String, to: 
     return SequenceMessage(
         from: from,
         to: to,
-        label: _normalizeBrTags(label.trimmingCharacters(in: .whitespacesAndNewlines)),
+        label: _normalizeLineBreaks(label.trimmingCharacters(in: .whitespacesAndNewlines)),
         lineStyle: lineStyle,
         arrowHead: arrowHead,
         activate: activation == "+",
@@ -297,12 +297,17 @@ private func _ensureActor(_ diagram: inout SequenceDiagram, _ actorIds: inout Se
     diagram.actors.append(SequenceActor(id: id, label: id, type: "participant"))
 }
 
-private func _normalizeBrTags(_ text: String) -> String {
-    text.replacingOccurrences(of: #"<br\s*/?>"#, with: "<br>", options: [.regularExpression, .caseInsensitive])
-}
-
-private func _brTagsToNewlines(_ text: String) -> String {
-    text.replacingOccurrences(of: #"<br\s*/?>"#, with: "\n", options: [.regularExpression, .caseInsensitive])
+/// Turns either of Mermaid's line breaks into a real newline.
+///
+/// Any of `<br>`, `<br/>` or `<br />` is accepted, in any case — the documentation writes
+/// `<br/>`, but authors write all three — as is a literal `\\n`. Both forms match
+/// `original_src_multiline_utils.normalizeBrTags`, which the other diagram kinds go
+/// through; sequence diagrams used to accept neither outside of notes, so a break was
+/// measured and drawn as literal text.
+private func _normalizeLineBreaks(_ text: String) -> String {
+    text
+        .replacingOccurrences(of: #"<br\s*/?>"#, with: "\n", options: [.regularExpression, .caseInsensitive])
+        .replacingOccurrences(of: "\\n", with: "\n")
 }
 
 private func _match(_ pattern: String, _ text: String, caseInsensitive: Bool = false) -> [String]? {
