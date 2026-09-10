@@ -42,7 +42,7 @@ public struct GraphLayout {
             )
         case .sequenceDiagram:
             guard let parsed = graph.payload as? SequenceDiagram else {
-                return PositionedGraph(diagram: graph, content: .sequenceDiagram(actors: [], messages: [], blocks: [], lifelines: [], activations: [], notes: []))
+                return PositionedGraph(diagram: graph, content: .sequenceDiagram(actors: [], messages: [], blocks: [], lifelines: [], activations: [], notes: [], participantBoxes: []))
             }
             let positioned = try layoutSequenceDiagram(parsed)
             return PositionedGraph(
@@ -55,7 +55,8 @@ public struct GraphLayout {
                     blocks: positioned.blocks,
                     lifelines: positioned.lifelines,
                     activations: positioned.activations,
-                    notes: positioned.notes
+                    notes: positioned.notes,
+                    participantBoxes: positioned.participantBoxes
                 )
             )
         case .xyChart:

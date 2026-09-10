@@ -7,6 +7,36 @@ public struct SequenceDiagram: Sendable {
     public var messages: [SequenceMessage]
     public var blocks: [SequenceBlock]
     public var notes: [SequenceNote]
+    /// `activate` / `deactivate` written as statements of their own, rather than as the
+    /// `+` and `-` suffixes on an arrow. Mermaid treats the two spellings as equals.
+    public var activationEvents: [SequenceActivationEvent] = []
+    /// `box ... end` groupings drawn around a run of participants.
+    public var boxes: [SequenceParticipantBox] = []
+}
+
+/// A `box Label ... end` grouping around consecutive participants.
+public struct SequenceParticipantBox: Sendable {
+    public var label: String
+    public var actorIds: [String]
+
+    public init(label: String, actorIds: [String]) {
+        self.label = label
+        self.actorIds = actorIds
+    }
+}
+
+/// An `activate X` or `deactivate X` line, kept in the order it was written.
+public struct SequenceActivationEvent: Sendable {
+    public var actorId: String
+    public var isActivate: Bool
+    /// Index of the last message before this line; -1 when it precedes every message.
+    public var afterIndex: Int
+
+    public init(actorId: String, isActivate: Bool, afterIndex: Int) {
+        self.actorId = actorId
+        self.isActivate = isActivate
+        self.afterIndex = afterIndex
+    }
 }
 
 public struct SequenceActor: Sendable {
@@ -56,6 +86,26 @@ public struct PositionedSequenceDiagram: Sendable {
     public var activations: [SequenceActivation]
     public var blocks: [PositionedSequenceBlock]
     public var notes: [PositionedSequenceNote]
+    public var participantBoxes: [PositionedParticipantBox] = []
+}
+
+/// A `box ... end` grouping, drawn around the participant headers it contains.
+public struct PositionedParticipantBox: Sendable {
+    public var label: String
+    public var actorIds: [String]
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+
+    public init(label: String, actorIds: [String], x: Double, y: Double, width: Double, height: Double) {
+        self.label = label
+        self.actorIds = actorIds
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
 }
 
 public struct PositionedSequenceActor: Sendable {
@@ -160,6 +210,9 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
     // `autonumber <start> <step>` and `autonumber off`, switchable mid-diagram.
     var autonumberNext: Int?
     var autonumberStep = 1
+    // A `box` collects the participants declared inside it. Its `end` has to be consumed
+    // here: left to the block stack it closed whichever loop or alt happened to be open.
+    var openBox: (label: String, actorIds: [String])?
 
     if lines.count <= 1 {
         return diagram
@@ -183,6 +236,34 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             continue
         }
 
+        if let m = _match(#"^box(?:\s+(.*))?$"#, line, caseInsensitive: true), openBox == nil {
+            // Mermaid allows a colour before the name (`box Aqua Payments`). Keep the whole
+            // remainder as the label rather than guessing which words are a colour.
+            openBox = (label: _normalizeLineBreaks(m.count > 1 ? m[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""), actorIds: [])
+            continue
+        }
+
+        if line.lowercased() == "end", let box = openBox {
+            openBox = nil
+            if !box.actorIds.isEmpty {
+                diagram.boxes.append(SequenceParticipantBox(label: box.label, actorIds: box.actorIds))
+            }
+            continue
+        }
+
+        if let m = _match(#"^(activate|deactivate)\s+(\S+)\s*$"#, line, caseInsensitive: true) {
+            let id = m[2]
+            _ensureActor(&diagram, &actorIds, id)
+            diagram.activationEvents.append(
+                SequenceActivationEvent(
+                    actorId: id,
+                    isActivate: m[1].lowercased() == "activate",
+                    afterIndex: diagram.messages.count - 1
+                )
+            )
+            continue
+        }
+
         if let m = _match(#"^(participant|actor)\s+(\S+?)(?:\s+as\s+(.+))?$"#, line) {
             let type = m[1].lowercased()
             let id = m[2]
@@ -190,6 +271,9 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             if !actorIds.contains(id) {
                 actorIds.insert(id)
                 diagram.actors.append(SequenceActor(id: id, label: label, type: type))
+            }
+            if openBox != nil, !openBox!.actorIds.contains(id) {
+                openBox!.actorIds.append(id)
             }
             continue
         }

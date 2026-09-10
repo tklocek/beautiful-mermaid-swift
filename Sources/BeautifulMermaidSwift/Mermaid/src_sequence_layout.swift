@@ -16,6 +16,10 @@ private enum _SEQ {
     static let blockPadBottom: Double = 8
     static let blockHeaderExtra: Double = 28
     static let dividerExtra: Double = 24
+    /// Room above the participant headers for a `box` label.
+    static let boxLabelHeight: Double = 20
+    /// Padding between a `box` and the headers it surrounds.
+    static let boxPad: Double = 8
     /// Height of a single-line block tab, matching the renderers.
     static let blockTabHeight: Double = 18
     /// Padding either side of a block's tab label, matching the renderers.
@@ -120,7 +124,10 @@ private func _layoutSequenceDiagramEntry(
         actorIndex[diagram.actors[i].id] = i
     }
 
-    let actorY = _SEQ.padding
+    // A `box` is drawn around the participant headers, with its own label above them, so
+    // the headers drop to leave room for it.
+    let boxHeaderRoom = diagram.boxes.isEmpty ? 0 : _SEQ.boxLabelHeight + _SEQ.boxPad
+    let actorY = _SEQ.padding + boxHeaderRoom
     let actors: [PositionedSequenceActor] = diagram.actors.enumerated().map { idx, actor in
         PositionedSequenceActor(
             id: actor.id,
@@ -130,6 +137,31 @@ private func _layoutSequenceDiagramEntry(
             y: actorY,
             width: actorWidths[idx],
             height: _SEQ.actorHeight
+        )
+    }
+
+    let participantBoxes: [PositionedParticipantBox] = diagram.boxes.compactMap { box -> PositionedParticipantBox? in
+        let indices = box.actorIds.compactMap { actorIndex[$0] }
+        guard let first = indices.min(), let last = indices.max() else { return nil }
+
+        let left = actorCenterX[first] - actorWidths[first] / 2 - _SEQ.boxPad
+        var right = actorCenterX[last] + actorWidths[last] / 2 + _SEQ.boxPad
+
+        // The label sits at the top-left; a long one must not hang off the side.
+        let labelWidth = _labelWidth(
+            box.label,
+            original_src_styles.FONT_SIZES.edgeLabel,
+            original_src_styles.FONT_WEIGHTS.groupHeader
+        )
+        right = max(right, left + labelWidth + _SEQ.boxPad * 2)
+
+        return PositionedParticipantBox(
+            label: box.label,
+            actorIds: box.actorIds,
+            x: left,
+            y: _SEQ.padding,
+            width: right - left,
+            height: (actorY + _SEQ.actorHeight + _SEQ.boxPad) - _SEQ.padding
         )
     }
 
@@ -147,6 +179,58 @@ private func _layoutSequenceDiagramEntry(
     var activationStacks: [String: [(startY: Double, depth: Int)]] = [:]
     var activations: [SequenceActivation] = []
     let nestingOffset = 4.0
+
+    func openActivation(_ actorId: String, at y: Double) {
+        var stack = activationStacks[actorId] ?? []
+        stack.append((startY: y, depth: stack.count))
+        activationStacks[actorId] = stack
+    }
+
+    func closeActivation(_ actorId: String, at y: Double) {
+        var stack = activationStacks[actorId] ?? []
+        guard !stack.isEmpty else { return }
+        let top = stack.removeLast()
+        activationStacks[actorId] = stack
+        let idx = actorIndex[actorId] ?? 0
+        activations.append(
+            SequenceActivation(
+                actorId: actorId,
+                x: actorCenterX[idx] - _SEQ.activationWidth / 2 + Double(top.depth) * nestingOffset,
+                topY: top.startY,
+                bottomY: y,
+                width: _SEQ.activationWidth
+            )
+        )
+    }
+
+    /// Horizontal span covered by an actor's activation bars right now, or nil when none
+    /// is open. Nested bars step to the right, so the span runs from the outermost bar's
+    /// left edge to the innermost one's right edge.
+    ///
+    /// `pendingDepth` counts a bar that this very message opens: an activating arrow has
+    /// to land on the bar it creates, not pass through where it will be.
+    func activationSpan(_ actorId: String, pendingOpen: Bool) -> (left: Double, right: Double)? {
+        let openCount = (activationStacks[actorId]?.count ?? 0) + (pendingOpen ? 1 : 0)
+        guard openCount > 0, let idx = actorIndex[actorId] else { return nil }
+        let centre = actorCenterX[idx]
+        let deepest = Double(openCount - 1) * nestingOffset
+        return (
+            left: centre - _SEQ.activationWidth / 2,
+            right: centre + _SEQ.activationWidth / 2 + deepest
+        )
+    }
+
+    /// `activate` / `deactivate` statements take effect where they were written, so they
+    /// are applied against the row of the message that follows them.
+    func applyActivationEvents(after messageIndex: Int, at y: Double) {
+        for event in diagram.activationEvents where event.afterIndex == messageIndex {
+            if event.isActivate {
+                openActivation(event.actorId, at: y)
+            } else {
+                closeActivation(event.actorId, at: y)
+            }
+        }
+    }
 
     for msgIdx in 0..<diagram.messages.count {
         let msg = diagram.messages[msgIdx]
@@ -179,8 +263,28 @@ private func _layoutSequenceDiagramEntry(
             messageY = max(messageY, requiredY)
         }
 
-        let x1 = actorCenterX[fromIdx]
-        let x2 = actorCenterX[toIdx]
+        applyActivationEvents(after: msgIdx - 1, at: messageY)
+
+        // An arrow must stop at the edge of an activation bar rather than run under it to
+        // the lifeline's centre, which left the head buried inside the bar.
+        var x1 = actorCenterX[fromIdx]
+        var x2 = actorCenterX[toIdx]
+
+        if isSelfMsg {
+            // The loop leaves and returns on the right-hand side.
+            if let span = activationSpan(msg.from, pendingOpen: msg.activate) {
+                x1 = span.right
+                x2 = span.right
+            }
+        } else {
+            let goingRight = x2 > x1
+            if let span = activationSpan(msg.from, pendingOpen: false) {
+                x1 = goingRight ? span.right : span.left
+            }
+            if let span = activationSpan(msg.to, pendingOpen: msg.activate) {
+                x2 = goingRight ? span.left : span.right
+            }
+        }
 
         messages.append(
             PositionedSequenceMessage(
@@ -198,30 +302,11 @@ private func _layoutSequenceDiagramEntry(
         )
 
         if msg.activate {
-            var stack = activationStacks[msg.to] ?? []
-            let depth = stack.count
-            stack.append((startY: messageY, depth: depth))
-            activationStacks[msg.to] = stack
+            openActivation(msg.to, at: messageY)
         }
 
         if msg.deactivate {
-            var stack = activationStacks[msg.from] ?? []
-            if !stack.isEmpty {
-                let top = stack.removeLast()
-                activationStacks[msg.from] = stack
-
-                let idx = actorIndex[msg.from] ?? 0
-                let xOffset = Double(top.depth) * nestingOffset
-                activations.append(
-                    SequenceActivation(
-                        actorId: msg.from,
-                        x: actorCenterX[idx] - _SEQ.activationWidth / 2 + xOffset,
-                        topY: top.startY,
-                        bottomY: messageY,
-                        width: _SEQ.activationWidth
-                    )
-                )
-            }
+            closeActivation(msg.from, at: messageY)
         }
 
         // A wrapped label is taller than the row was sized for, and its extra lines are
@@ -232,6 +317,8 @@ private func _layoutSequenceDiagramEntry(
         messageY += isSelfMsg ? (_SEQ.selfMessageHeight + _SEQ.messageRowHeight) : _SEQ.messageRowHeight
         if isSelfMsg { messageY += labelGrowth }
     }
+
+    applyActivationEvents(after: diagram.messages.count - 1, at: messageY - _SEQ.messageRowHeight / 2)
 
     for (actorId, stack) in activationStacks {
         for item in stack {
@@ -425,6 +512,10 @@ private func _layoutSequenceDiagramEntry(
         globalMinX = min(globalMinX, block.x)
         globalMaxX = max(globalMaxX, block.x + block.width)
     }
+    for box in participantBoxes {
+        globalMinX = min(globalMinX, box.x)
+        globalMaxX = max(globalMaxX, box.x + box.width)
+    }
     for note in notes {
         globalMinX = min(globalMinX, note.x)
         globalMaxX = max(globalMaxX, note.x + note.width)
@@ -448,6 +539,7 @@ private func _layoutSequenceDiagramEntry(
     var shiftedActivations = activations
     var shiftedBlocks = blocks
     var shiftedNotes = notes
+    var shiftedBoxes = participantBoxes
 
     if shiftX > 0 {
         for i in shiftedActors.indices {
@@ -465,6 +557,9 @@ private func _layoutSequenceDiagramEntry(
         }
         for i in shiftedNotes.indices {
             shiftedNotes[i].x += shiftX
+        }
+        for i in shiftedBoxes.indices {
+            shiftedBoxes[i].x += shiftX
         }
         for i in actorCenterX.indices {
             actorCenterX[i] += shiftX
@@ -491,7 +586,8 @@ private func _layoutSequenceDiagramEntry(
         messages: shiftedMessages,
         activations: shiftedActivations,
         blocks: shiftedBlocks,
-        notes: shiftedNotes
+        notes: shiftedNotes,
+        participantBoxes: shiftedBoxes
     )
 }
 

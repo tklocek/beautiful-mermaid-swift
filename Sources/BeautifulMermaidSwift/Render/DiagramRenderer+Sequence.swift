@@ -11,6 +11,7 @@ extension DiagramRenderer {
         else { return }
 
         let blocks = positioned.sequenceBlocks ?? []
+        let participantBoxes = positioned.seqParticipantBoxes
         let lifelines = positioned.seqLifelines
         let activations = positioned.seqActivations
         let notes = positioned.seqNotes
@@ -19,6 +20,28 @@ extension DiagramRenderer {
             let ch = max(1, positioned.height)
 
             let config = self.config
+
+            // 0. Participant boxes, behind everything: they group the headers, so the
+            //    headers and every line that leaves them are drawn on top.
+            for box in participantBoxes {
+                let rect = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
+                ctx.setFillColor(self.theme.subgraphHeaderColor().cgColor)
+                ctx.fill(rect)
+                ctx.setStrokeColor(self.theme.effectiveBorder().cgColor)
+                ctx.setLineWidth(config.strokeWidthOuterBox)
+                ctx.stroke(rect)
+
+                if !box.label.isEmpty {
+                    self._drawTextInFlipped(
+                        box.label,
+                        at: CGPoint(x: box.x + 8, y: box.y + 10),
+                        context: ctx, contentHeight: ch,
+                        color: self.theme.effectiveTextSecondary(),
+                        font: config.groupHeaderFont(),
+                        alignment: .left
+                    )
+                }
+            }
 
             // Order matters here. Lifelines and activation bars belong to the actors, so
             // they go down first; block frames and their tab labels are drawn over them.
@@ -49,7 +72,11 @@ extension DiagramRenderer {
 
             // 2. Activation bars
             for act in activations {
-                let actRect = CGRect(x: act.x - act.width / 2, y: act.topY, width: act.width, height: act.bottomY - act.topY)
+                // `act.x` is the bar's left edge: the layout has already taken half the
+                // width off the lifeline's centre. Subtracting it again here shifted every
+                // activation bar half its width to the left, so it hung off the side of
+                // the lifeline instead of straddling it. The SVG renderer never did this.
+                let actRect = CGRect(x: act.x, y: act.topY, width: act.width, height: act.bottomY - act.topY)
                 ctx.setFillColor(self.theme.effectiveSurface().cgColor)
                 ctx.fill(actRect)
                 ctx.setStrokeColor(self.theme.effectiveBorder().cgColor)

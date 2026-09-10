@@ -92,7 +92,8 @@ public enum PositionedContent: Sendable {
         blocks: [PositionedSequenceBlock],
         lifelines: [SequenceLifeline],
         activations: [SequenceActivation],
-        notes: [PositionedSequenceNote]
+        notes: [PositionedSequenceNote],
+        participantBoxes: [PositionedParticipantBox]
     )
     case classDiagram(
         classes: [PositionedClassNode],
@@ -140,7 +141,7 @@ public struct PositionedGraph: Sendable {
         case .stateDiagram:
             self.content = .stateDiagram(nodes: [], edges: [], groups: [])
         case .sequenceDiagram:
-            self.content = .sequenceDiagram(actors: [], messages: [], blocks: [], lifelines: [], activations: [], notes: [])
+            self.content = .sequenceDiagram(actors: [], messages: [], blocks: [], lifelines: [], activations: [], notes: [], participantBoxes: [])
         case .classDiagram:
             self.content = .classDiagram(classes: [], relationships: [])
         case .erDiagram:
@@ -178,37 +179,44 @@ public struct PositionedGraph: Sendable {
 
     public var sequenceActors: [PositionedSequenceActor]? {
         switch content {
-        case .sequenceDiagram(let actors, _, _, _, _, _): return actors
+        case .sequenceDiagram(let actors, _, _, _, _, _, _): return actors
         default: return nil
         }
     }
     public var sequenceMessages: [PositionedSequenceMessage]? {
         switch content {
-        case .sequenceDiagram(_, let messages, _, _, _, _): return messages
+        case .sequenceDiagram(_, let messages, _, _, _, _, _): return messages
         default: return nil
         }
     }
     public var sequenceBlocks: [PositionedSequenceBlock]? {
         switch content {
-        case .sequenceDiagram(_, _, let blocks, _, _, _): return blocks
+        case .sequenceDiagram(_, _, let blocks, _, _, _, _): return blocks
         default: return nil
         }
     }
     public var seqLifelines: [SequenceLifeline] {
         switch content {
-        case .sequenceDiagram(_, _, _, let lifelines, _, _): return lifelines
+        case .sequenceDiagram(_, _, _, let lifelines, _, _, _): return lifelines
         default: return []
         }
     }
     public var seqActivations: [SequenceActivation] {
         switch content {
-        case .sequenceDiagram(_, _, _, _, let activations, _): return activations
+        case .sequenceDiagram(_, _, _, _, let activations, _, _): return activations
         default: return []
         }
     }
+    public var seqParticipantBoxes: [PositionedParticipantBox] {
+        switch content {
+        case .sequenceDiagram(_, _, _, _, _, _, let boxes): return boxes
+        default: return []
+        }
+    }
+
     public var seqNotes: [PositionedSequenceNote] {
         switch content {
-        case .sequenceDiagram(_, _, _, _, _, let notes): return notes
+        case .sequenceDiagram(_, _, _, _, _, let notes, _): return notes
         default: return []
         }
     }

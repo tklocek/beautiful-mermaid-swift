@@ -34,6 +34,27 @@ private func _renderSequenceSvgEntry(
     parts.append(arrowMarkerDefs())
     parts.append("</defs>")
 
+    // Participant boxes group the headers, so they go behind everything.
+    for box in diagram.participantBoxes {
+        let labelAttr = box.label.isEmpty ? "" : " data-label=\"\(escapeAttr(box.label))\""
+        parts.append("<g class=\"participant-box\"\(labelAttr)>")
+        parts.append(
+            "  <rect x=\"\(box.x)\" y=\"\(box.y)\" width=\"\(box.width)\" height=\"\(box.height)\" fill=\"var(--_group-hdr)\" stroke=\"var(--_node-stroke)\" stroke-width=\"\(original_src_styles.STROKE_WIDTHS.outerBox)\" />"
+        )
+        if !box.label.isEmpty {
+            parts.append(
+                "  " + original_src_multiline_utils.renderMultilineText(
+                    box.label,
+                    cx: box.x + 8,
+                    cy: box.y + 10,
+                    fontSize: original_src_styles.FONT_SIZES.edgeLabel,
+                    attrs: "font-size=\"\(original_src_styles.FONT_SIZES.edgeLabel)\" text-anchor=\"start\" font-weight=\"\(original_src_styles.FONT_WEIGHTS.groupHeader)\" fill=\"var(--_text-sec)\""
+                )
+            )
+        }
+        parts.append("</g>")
+    }
+
     // SVG paints in document order. Lifelines and activation bars belong to the actors,
     // so they are emitted first and block frames sit above them. Emitted the other way
     // round, a dashed lifeline was drawn across a block's tab and an activation bar over
