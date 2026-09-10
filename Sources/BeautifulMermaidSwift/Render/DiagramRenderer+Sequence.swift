@@ -154,6 +154,15 @@ extension DiagramRenderer {
                         alignment: .center
                     )
                 }
+
+                if let number = msg.sequenceNumber {
+                    self._drawSequenceNumber(
+                        number,
+                        at: CGPoint(x: msg.x1, y: msg.y),
+                        in: ctx,
+                        contentHeight: ch
+                    )
+                }
             }
 
             // 5. Notes (sticky-note polygons with fold corner)
@@ -269,6 +278,35 @@ extension DiagramRenderer {
             context.fillPath()
         }
         context.restoreGState()
+    }
+
+    private func _drawSequenceNumber(
+        _ number: Int,
+        at point: CGPoint,
+        in context: CGContext,
+        contentHeight: Double
+    ) {
+        let radius: CGFloat = 9
+        let circle = CGRect(
+            x: point.x - radius,
+            y: point.y - radius,
+            width: radius * 2,
+            height: radius * 2
+        )
+        context.setFillColor(theme.effectiveSurface().cgColor)
+        context.fillEllipse(in: circle)
+        context.setStrokeColor(theme.effectiveBorder().cgColor)
+        context.setLineWidth(config.strokeWidthInnerBox)
+        context.strokeEllipse(in: circle)
+
+        _drawTextInFlipped(
+            String(number),
+            at: point,
+            context: context, contentHeight: contentHeight,
+            color: theme.effectiveMuted(),
+            font: config.edgeLabelFont(),
+            alignment: .center
+        )
     }
 
     private func _drawActorFigure(_ actor: PositionedSequenceActor, in context: CGContext, contentHeight: Double) {

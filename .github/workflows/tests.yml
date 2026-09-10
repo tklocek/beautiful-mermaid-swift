@@ -1,0 +1,42 @@
+name: Tests
+
+# Every pull request, and every push to main -- which is how merges land.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: swift test
+    # macOS is required: the renderers use CoreGraphics and AppKit.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Report toolchain
+        run: swift --version
+
+      - name: Cache SwiftPM artefacts
+        uses: actions/cache@v6
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved') }}
+          restore-keys: ${{ runner.os }}-spm-
+
+      # Split from the test step so a compile failure is distinguishable
+      # from a test failure at a glance.
+      - name: Build
+        run: swift build --build-tests
+
+      - name: Test
+        run: swift test

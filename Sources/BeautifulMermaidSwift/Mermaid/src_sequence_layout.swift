@@ -136,7 +136,8 @@ private func _layoutSequenceDiagramEntry(
                 x1: x1,
                 x2: x2,
                 y: messageY,
-                isSelf: isSelfMsg
+                isSelf: isSelfMsg,
+                sequenceNumber: msg.sequenceNumber
             )
         )
 
