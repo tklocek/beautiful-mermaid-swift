@@ -98,9 +98,15 @@ extension DiagramRenderer {
                 // one row per line down. Sized for a single line, a wrapped label spilled
                 // out through the bottom edge.
                 let tabLines = labelText.components(separatedBy: "\n")
-                let tabWidth = tabLines.reduce(0.0) {
-                    max($0, config.estimateTextWidth($1, fontSize: config.fontSizeEdgeLabel, fontWeight: config.fontWeightGroupHeader))
-                } + 16
+                // Measured with the font the text is actually drawn in, not the estimator:
+                // the estimate runs 10-30pt short, so a tab sized from it ended with the
+                // label overhanging its own right edge while the left kept its padding.
+                let tabFont = config.groupHeaderFont()
+                let tabTextWidth = tabLines.reduce(0.0) {
+                    max($0, self.labelRenderer.measureText($1, font: tabFont).width)
+                }
+                let tabPadX: CGFloat = 8
+                let tabWidth = tabTextWidth + tabPadX * 2
                 let tabHeight = config.sequenceTabHeight
                     + Double(tabLines.count - 1) * config.fontSizeEdgeLabel * 1.3
                 let tabRect = CGRect(x: block.x, y: block.y, width: tabWidth, height: tabHeight)
@@ -111,7 +117,7 @@ extension DiagramRenderer {
 
                 self._drawTextInFlipped(
                     labelText,
-                    at: CGPoint(x: block.x + 6, y: block.y + tabHeight / 2),
+                    at: CGPoint(x: block.x + tabPadX, y: block.y + tabHeight / 2),
                     context: ctx, contentHeight: ch,
                     color: self.theme.effectiveTextSecondary(),
                     font: config.groupHeaderFont(),

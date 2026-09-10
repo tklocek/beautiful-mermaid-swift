@@ -68,6 +68,10 @@ public struct SequenceBlock: Sendable {
     public var startIndex: Int
     public var endIndex: Int
     public var dividers: [SequenceBlockDivider]
+    /// How many blocks enclose this one. Known only while parsing — by the time the blocks
+    /// are a flat list, a nested block that happens to span the same messages as its parent
+    /// is indistinguishable from it.
+    public var depth: Int = 0
 }
 
 public struct SequenceNote: Sendable {
@@ -188,6 +192,7 @@ private struct _OpenBlock {
     var label: String
     var startIndex: Int
     var dividers: [SequenceBlockDivider]
+    var depth: Int
 }
 
 public func parseSequenceDiagram(_ lines: [String]) throws -> SequenceDiagram {
@@ -303,7 +308,8 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
                     type: m[1],
                     label: _normalizeLineBreaks(m[2].trimmingCharacters(in: .whitespacesAndNewlines)),
                     startIndex: diagram.messages.count,
-                    dividers: []
+                    dividers: [],
+                    depth: blockStack.count
                 )
             )
             continue
@@ -328,7 +334,8 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
                     label: completed.label,
                     startIndex: completed.startIndex,
                     endIndex: max(diagram.messages.count - 1, completed.startIndex),
-                    dividers: completed.dividers
+                    dividers: completed.dividers,
+                    depth: completed.depth
                 )
             )
             continue

@@ -223,6 +223,10 @@ private func renderMessage(_ msg: PositionedSequenceMessage) -> String {
     return parts.joined(separator: "\n")
 }
 
+/// Padding either side of a block tab's label, so the grey after the text matches the
+/// grey before it.
+private let blockTabPadX: Double = 8
+
 private func renderBlock(_ block: PositionedSequenceBlock) -> String {
     var parts: [String] = []
     let labelAttr = block.label.isEmpty ? "" : " data-label=\"\(escapeAttr(block.label))\""
@@ -243,7 +247,7 @@ private func renderBlock(_ block: PositionedSequenceBlock) -> String {
             original_src_styles.FONT_SIZES.edgeLabel,
             original_src_styles.FONT_WEIGHTS.groupHeader
         ))
-    } + 16
+    } + blockTabPadX * 2
     let tabHeight = 18.0
         + Double(tabLines.count - 1) * original_src_styles.FONT_SIZES.edgeLabel * original_src_text_metrics.LINE_HEIGHT_RATIO
 
@@ -254,7 +258,7 @@ private func renderBlock(_ block: PositionedSequenceBlock) -> String {
     parts.append(
         "  " + original_src_multiline_utils.renderMultilineText(
             labelText,
-            cx: block.x + 6,
+            cx: block.x + blockTabPadX,
             cy: block.y + tabHeight / 2,
             fontSize: original_src_styles.FONT_SIZES.edgeLabel,
             attrs: "font-size=\"\(original_src_styles.FONT_SIZES.edgeLabel)\" font-weight=\"\(original_src_styles.FONT_WEIGHTS.groupHeader)\" fill=\"var(--_text-sec)\""
