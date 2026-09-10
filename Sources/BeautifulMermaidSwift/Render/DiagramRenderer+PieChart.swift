@@ -26,9 +26,13 @@ extension DiagramRenderer {
                 ctx.fill(CGRect(x: 0, y: 0, width: chart.width, height: chart.height))
             }
 
+            // Two passes. Filling and stroking each wedge in one pass lets the next
+            // wedge's fill paint over the previous wedge's stroke, so separator widths
+            // came out uneven, and stroking the whole wedge outline put a mitred join on
+            // the very sharp centre vertex, which exceeded the miter limit and was
+            // bevelled off — a notch where the slices should meet at a point.
             for slice in chart.slices {
                 let colorHex = self._pieSliceHex(slice.colorIndex, accentHex: accentHex, bgHex: bgHex)
-                let color = BMColor(hex: colorHex)
 
                 ctx.beginPath()
                 if slice.percentage >= 0.9999 {
@@ -49,31 +53,34 @@ extension DiagramRenderer {
                     )
                     ctx.closePath()
                 }
-                ctx.setFillColor(color.cgColor)
+                ctx.setFillColor(BMColor(hex: colorHex).cgColor)
                 ctx.fillPath()
+            }
 
-                ctx.beginPath()
-                if slice.percentage >= 0.9999 {
-                    ctx.addEllipse(in: CGRect(
-                        x: chart.centerX - chart.radius,
-                        y: chart.centerY - chart.radius,
-                        width: chart.radius * 2,
-                        height: chart.radius * 2
-                    ))
-                } else {
-                    ctx.move(to: center)
-                    ctx.addArc(
-                        center: center,
-                        radius: chart.radius,
-                        startAngle: CGFloat(slice.startAngle),
-                        endAngle: CGFloat(slice.endAngle),
-                        clockwise: false
-                    )
-                    ctx.closePath()
-                }
+            // Separators are drawn as plain radii: a straight line has no join to mitre,
+            // so the centre stays a clean point and every gap is the same width.
+            //
+            // The cap must be round. A butt cap ends flush and perpendicular to its own
+            // radius, and three such ends do not tile the neighbourhood of the centre —
+            // they leave slivers of slice colour between them, which reads as the lines
+            // stopping just short of each other. Round caps overlap into a single disc of
+            // radius lineWidth/2. At the rim the cap spills lineWidth/2 past the circle,
+            // which is invisible: it is background colour drawn on background.
+            if chart.slices.count > 1 {
+                ctx.saveGState()
                 ctx.setStrokeColor(bgColor.cgColor)
                 ctx.setLineWidth(2)
+                ctx.setLineCap(.round)
+                for slice in chart.slices {
+                    let angle = CGFloat(slice.startAngle)
+                    ctx.move(to: center)
+                    ctx.addLine(to: CGPoint(
+                        x: center.x + cos(angle) * chart.radius,
+                        y: center.y + sin(angle) * chart.radius
+                    ))
+                }
                 ctx.strokePath()
+                ctx.restoreGState()
             }
 
             let labelFont = BMFont.systemFont(ofSize: 12, weight: .semibold)

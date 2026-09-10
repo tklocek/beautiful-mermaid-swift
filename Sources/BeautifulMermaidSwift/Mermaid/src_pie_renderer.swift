@@ -34,7 +34,12 @@ public func renderPieChartSvg(
         original_src_theme.buildStyleBlock(font, false),
         """
         <style>
-          .piechart-slice { stroke: var(--bg); stroke-width: 2; }
+          /* Slices carry no stroke: stroking a wedge outline puts a mitred join on
+             the very sharp centre vertex, which exceeds the miter limit and is
+             bevelled off, notching the point where the slices meet. Separators are
+             drawn separately as plain radii instead. */
+          .piechart-slice { stroke: none; }
+          .piechart-separator { stroke: var(--bg); stroke-width: 2; stroke-linecap: round; }
           .piechart-title { fill: var(--_text); }
           .piechart-label { font-size: \(PieSvgFont.labelSize)px; font-weight: \(PieSvgFont.labelWeight); }
           .piechart-legend-text { fill: var(--_text-muted); }
@@ -52,6 +57,16 @@ public func renderPieChartSvg(
         } else {
             parts.append(
                 "<path class=\"piechart-slice\" \(dataAttrs) d=\"\(_pieSlicePath(chart, slice))\" fill=\"\(color)\"/>"
+            )
+        }
+    }
+
+    if chart.slices.count > 1 {
+        for slice in chart.slices {
+            let ex = chart.centerX + cos(slice.startAngle) * chart.radius
+            let ey = chart.centerY + sin(slice.startAngle) * chart.radius
+            parts.append(
+                "<line class=\"piechart-separator\" x1=\"\(_pieR(chart.centerX))\" y1=\"\(_pieR(chart.centerY))\" x2=\"\(_pieR(ex))\" y2=\"\(_pieR(ey))\"/>"
             )
         }
     }
