@@ -34,14 +34,18 @@ private func _renderSequenceSvgEntry(
     parts.append(arrowMarkerDefs())
     parts.append("</defs>")
 
-    for block in diagram.blocks {
-        parts.append(renderBlock(block))
-    }
+    // SVG paints in document order. Lifelines and activation bars belong to the actors,
+    // so they are emitted first and block frames sit above them. Emitted the other way
+    // round, a dashed lifeline was drawn across a block's tab and an activation bar over
+    // the frame it sits inside — and over the tab's text.
     for lifeline in diagram.lifelines {
         parts.append(renderLifeline(lifeline))
     }
     for activation in diagram.activations {
         parts.append(renderActivation(activation))
+    }
+    for block in diagram.blocks {
+        parts.append(renderBlock(block))
     }
     for message in diagram.messages {
         parts.append(renderMessage(message))
@@ -173,11 +177,17 @@ private func renderMessage(_ msg: PositionedSequenceMessage) -> String {
             "  <line x1=\"\(msg.x1)\" y1=\"\(msg.y)\" x2=\"\(msg.x2)\" y2=\"\(msg.y)\" stroke=\"var(--_line)\" stroke-width=\"\(original_src_styles.STROKE_WIDTHS.connector)\"\(dashArray) marker-end=\"url(#\(markerId))\" />"
         )
         let midX = (msg.x1 + msg.x2) / 2
+        // renderMultilineText centres the block on cy, so extra lines would grow downwards
+        // across the arrow. Lift by the lines above the last one.
+        let labelLines = msg.label.components(separatedBy: "\n").count
+        let labelLift = Double(labelLines - 1) / 2
+            * original_src_styles.FONT_SIZES.edgeLabel
+            * original_src_text_metrics.LINE_HEIGHT_RATIO
         parts.append(
             "  " + original_src_multiline_utils.renderMultilineText(
                 msg.label,
                 cx: midX,
-                cy: msg.y - 6,
+                cy: msg.y - 6 - labelLift,
                 fontSize: original_src_styles.FONT_SIZES.edgeLabel,
                 attrs: "font-size=\"\(original_src_styles.FONT_SIZES.edgeLabel)\" text-anchor=\"middle\" font-weight=\"\(original_src_styles.FONT_WEIGHTS.edgeLabel)\" fill=\"var(--_text-muted)\""
             )
@@ -202,13 +212,19 @@ private func renderBlock(_ block: PositionedSequenceBlock) -> String {
     )
 
     let labelText = block.label.isEmpty ? block.type : "\(block.type) [\(block.label)]"
-    let firstLine = labelText.components(separatedBy: "\n").first ?? labelText
-    let tabWidth = original_src_styles.estimateTextWidth(
-        firstLine,
-        original_src_styles.FONT_SIZES.edgeLabel,
-        original_src_styles.FONT_WEIGHTS.groupHeader
-    ) + 16
+    // The tab holds the label, so it has to grow with it: widest line across, one row per
+    // line down. Measuring only the first line left a wrapped label sticking out sideways
+    // as well as through the bottom edge.
+    let tabLines = labelText.components(separatedBy: "\n")
+    let tabWidth = tabLines.reduce(0.0) {
+        max($0, original_src_styles.estimateTextWidth(
+            $1,
+            original_src_styles.FONT_SIZES.edgeLabel,
+            original_src_styles.FONT_WEIGHTS.groupHeader
+        ))
+    } + 16
     let tabHeight = 18.0
+        + Double(tabLines.count - 1) * original_src_styles.FONT_SIZES.edgeLabel * original_src_text_metrics.LINE_HEIGHT_RATIO
 
     parts.append(
         "  <rect x=\"\(block.x)\" y=\"\(block.y)\" width=\"\(tabWidth)\" height=\"\(tabHeight)\" fill=\"var(--_group-hdr)\" stroke=\"var(--_node-stroke)\" stroke-width=\"\(original_src_styles.STROKE_WIDTHS.outerBox)\" />"

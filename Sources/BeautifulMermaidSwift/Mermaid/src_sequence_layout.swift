@@ -16,9 +16,32 @@ private enum _SEQ {
     static let blockPadBottom: Double = 8
     static let blockHeaderExtra: Double = 28
     static let dividerExtra: Double = 24
+    /// Height of a single-line block tab, matching the renderers.
+    static let blockTabHeight: Double = 18
+    /// Padding either side of a block's tab label, matching the renderers.
+    static let blockTabPadX: Double = 16
+    /// Where a self-message's label starts, relative to its lifeline.
+    static let selfMessageLabelX: Double = 36
+    /// Gap kept between a block frame's edge and the next actor's lifeline.
+    static let lifelineClearance: Double = 10
     static let noteWidth: Double = 120
     static let notePadding: Double = 8
     static let noteGap: Double = 10
+}
+
+/// Widest line of a label, not the label laid end to end.
+///
+/// Labels carry real newlines once `<br/>` has been parsed, so measuring the raw string
+/// both counted the break as text and reported the width of every line summed together.
+/// Wrapping a label used to make its frame wider, which is the opposite of the point.
+private func _labelWidth(_ text: String, _ fontSize: Double, _ fontWeight: Int) -> Double {
+    text.components(separatedBy: "\n")
+        .reduce(0.0) { max($0, original_src_styles.estimateTextWidth($1, fontSize, fontWeight)) }
+}
+
+/// Number of lines a label occupies.
+private func _labelLineCount(_ text: String) -> Int {
+    max(1, text.components(separatedBy: "\n").count)
 }
 
 public func layoutSequenceDiagram(
@@ -48,7 +71,7 @@ private func _layoutSequenceDiagramEntry(
     }
 
     let actorWidths = diagram.actors.map { actor in
-        let textW = original_src_styles.estimateTextWidth(
+        let textW = _labelWidth(
             actor.label,
             original_src_styles.FONT_SIZES.nodeLabel,
             original_src_styles.FONT_WEIGHTS.nodeLabel
@@ -56,11 +79,37 @@ private func _layoutSequenceDiagramEntry(
         return max(textW + _SEQ.actorPadX * 2, 80)
     }
 
+    // A self-message loops out to the right of its own lifeline and writes its label
+    // beyond the loop, so it needs room before the next lifeline begins. Without this the
+    // label — and any block frame sized to contain it — runs across the neighbouring
+    // actor's lifeline.
+    var selfMessageReach = [Double](repeating: 0, count: diagram.actors.count)
+    do {
+        var indexByID: [String: Int] = [:]
+        for (i, actor) in diagram.actors.enumerated() {
+            indexByID[actor.id] = i
+        }
+        for message in diagram.messages where message.from == message.to {
+            guard let idx = indexByID[message.from] else { continue }
+            let labelWidth = _labelWidth(
+                message.label,
+                original_src_styles.FONT_SIZES.edgeLabel,
+                original_src_styles.FONT_WEIGHTS.edgeLabel
+            )
+            let reach = _SEQ.selfMessageLabelX + labelWidth + _SEQ.blockPadX + _SEQ.lifelineClearance
+            selfMessageReach[idx] = max(selfMessageReach[idx], reach)
+        }
+    }
+
     var actorCenterX: [Double] = []
     var currentX = _SEQ.padding + actorWidths[0] / 2
     for i in 0..<diagram.actors.count {
         if i > 0 {
-            let minGap = max(_SEQ.actorGap, (actorWidths[i - 1] + actorWidths[i]) / 2 + 40)
+            let minGap = max(
+                _SEQ.actorGap,
+                (actorWidths[i - 1] + actorWidths[i]) / 2 + 40,
+                selfMessageReach[i - 1] + actorWidths[i] / 2
+            )
             currentX += minGap
         }
         actorCenterX.append(currentX)
@@ -108,6 +157,13 @@ private func _layoutSequenceDiagramEntry(
         let extra = extraSpaceBefore[msgIdx] ?? 0
         if extra > 0 {
             messageY += extra
+        }
+
+        // Extra lines are drawn above the arrow, so a wrapped label needs the room before
+        // its own row, not after it.
+        let ownExtraLines = Double(_labelLineCount(msg.label) - 1)
+        if ownExtraLines > 0 && !isSelfMsg {
+            messageY += ownExtraLines * original_src_styles.FONT_SIZES.edgeLabel * original_src_text_metrics.LINE_HEIGHT_RATIO
         }
 
         // Push messageY down if a note sits between the previous message and this one
@@ -168,7 +224,13 @@ private func _layoutSequenceDiagramEntry(
             }
         }
 
+        // A wrapped label is taller than the row was sized for, and its extra lines are
+        // drawn above the arrow, so the room has to come from the gap before it.
+        let extraLabelLines = Double(_labelLineCount(msg.label) - 1)
+        let labelGrowth = extraLabelLines * original_src_styles.FONT_SIZES.edgeLabel * original_src_text_metrics.LINE_HEIGHT_RATIO
+
         messageY += isSelfMsg ? (_SEQ.selfMessageHeight + _SEQ.messageRowHeight) : _SEQ.messageRowHeight
+        if isSelfMsg { messageY += labelGrowth }
     }
 
     for (actorId, stack) in activationStacks {
@@ -190,8 +252,29 @@ private func _layoutSequenceDiagramEntry(
     let blocks: [PositionedSequenceBlock] = diagram.blocks.map { block in
         let startMsg = block.startIndex < messages.count ? messages[block.startIndex] : nil
         let endMsg = block.endIndex < messages.count ? messages[block.endIndex] : nil
-        let blockTop = (startMsg?.y ?? messageY) - _SEQ.blockPadTop
-        let blockBottom = (endMsg?.y ?? messageY) + _SEQ.blockPadBottom + 12
+        // A wrapped tab is taller than the padding the frame reserves above its first
+        // message, so the frame's ceiling has to rise with it.
+        let tabLineCount = _labelLineCount("\(block.type)\(block.label.isEmpty ? "" : " [\(block.label)]")")
+        let tabOverflow = max(
+            0,
+            _SEQ.blockTabHeight
+                + Double(tabLineCount - 1) * original_src_styles.FONT_SIZES.edgeLabel * original_src_text_metrics.LINE_HEIGHT_RATIO
+                - _SEQ.blockPadTop
+        )
+        let blockTop = (startMsg?.y ?? messageY) - _SEQ.blockPadTop - tabOverflow
+        // A self-message's label sits beside its loop and grows downwards when wrapped, so
+        // the frame's floor has to follow it.
+        var trailingLabelGrowth = 0.0
+        if block.startIndex <= block.endIndex {
+            for mi in block.startIndex...block.endIndex where mi >= 0 && mi < messages.count {
+                let m = messages[mi]
+                guard m.isSelf else { continue }
+                let extraLines = Double(_labelLineCount(m.label) - 1)
+                let growth = extraLines * original_src_styles.FONT_SIZES.edgeLabel * original_src_text_metrics.LINE_HEIGHT_RATIO / 2
+                trailingLabelGrowth = max(trailingLabelGrowth, growth)
+            }
+        }
+        let blockBottom = (endMsg?.y ?? messageY) + _SEQ.blockPadBottom + 12 + trailingLabelGrowth
 
         var involvedActors = Set<Int>()
         if block.startIndex <= block.endIndex {
@@ -220,7 +303,7 @@ private func _layoutSequenceDiagramEntry(
 
             if !divider.label.isEmpty, let msg {
                 let divLabelText = "[\(divider.label)]"
-                let divLabelW = original_src_styles.estimateTextWidth(
+                let divLabelW = _labelWidth(
                     divLabelText,
                     original_src_styles.FONT_SIZES.edgeLabel,
                     original_src_styles.FONT_WEIGHTS.edgeLabel
@@ -228,7 +311,7 @@ private func _layoutSequenceDiagramEntry(
                 let divLabelLeft = blockLeft + 8
                 let divLabelRight = divLabelLeft + divLabelW
 
-                let msgLabelW = original_src_styles.estimateTextWidth(
+                let msgLabelW = _labelWidth(
                     msg.label,
                     original_src_styles.FONT_SIZES.edgeLabel,
                     original_src_styles.FONT_WEIGHTS.edgeLabel
@@ -246,12 +329,39 @@ private func _layoutSequenceDiagramEntry(
             return PositionedSequenceBlockDivider(y: msgY - offset, label: divider.label)
         }
 
+        // A frame must enclose what it frames. The span above is derived purely from the
+        // actors involved, which covers neither the block's own tab label nor a
+        // self-message — that loops out to the right of its lifeline and puts its label
+        // beyond the loop. Both used to spill past the right edge.
+        var enclosingRight = blockRight
+
+        let tabText = "\(block.type)\(block.label.isEmpty ? "" : " [\(block.label)]")"
+        let tabWidth = _labelWidth(
+            tabText,
+            original_src_styles.FONT_SIZES.edgeLabel,
+            original_src_styles.FONT_WEIGHTS.groupHeader
+        ) + _SEQ.blockTabPadX
+        enclosingRight = max(enclosingRight, blockLeft + tabWidth)
+
+        if block.startIndex <= block.endIndex {
+            for mi in block.startIndex...block.endIndex where mi >= 0 && mi < messages.count {
+                let m = messages[mi]
+                guard m.isSelf else { continue }
+                let labelWidth = _labelWidth(
+                    m.label,
+                    original_src_styles.FONT_SIZES.edgeLabel,
+                    original_src_styles.FONT_WEIGHTS.edgeLabel
+                )
+                enclosingRight = max(enclosingRight, m.x1 + _SEQ.selfMessageLabelX + labelWidth + _SEQ.blockPadX)
+            }
+        }
+
         return PositionedSequenceBlock(
             type: block.type,
             label: block.label,
             x: blockLeft,
             y: blockTop,
-            width: blockRight - blockLeft,
+            width: enclosingRight - blockLeft,
             height: blockBottom - blockTop,
             dividers: positionedDividers
         )
@@ -261,7 +371,7 @@ private func _layoutSequenceDiagramEntry(
         let noteLines = note.text.components(separatedBy: "\n")
         let nonEmpty = noteLines.isEmpty ? [""] : noteLines
         let maxLineWidth = nonEmpty.map {
-            original_src_styles.estimateTextWidth(
+            _labelWidth(
                 $0,
                 original_src_styles.FONT_SIZES.edgeLabel,
                 original_src_styles.FONT_WEIGHTS.edgeLabel
@@ -323,7 +433,7 @@ private func _layoutSequenceDiagramEntry(
         let loopW = 30.0
         let labelPadding = 8.0
         let labelLeft = msg.x1 + loopW + labelPadding
-        let labelWidth = original_src_styles.estimateTextWidth(
+        let labelWidth = _labelWidth(
             msg.label,
             original_src_styles.FONT_SIZES.edgeLabel,
             original_src_styles.FONT_WEIGHTS.edgeLabel

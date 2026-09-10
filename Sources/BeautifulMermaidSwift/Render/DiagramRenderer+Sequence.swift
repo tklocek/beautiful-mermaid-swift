@@ -20,7 +20,44 @@ extension DiagramRenderer {
 
             let config = self.config
 
-            // 1. Block regions (loop/alt/opt/par/critical)
+            // Order matters here. Lifelines and activation bars belong to the actors, so
+            // they go down first; block frames and their tab labels are drawn over them.
+            // Drawn the other way round, a dashed lifeline was stroked across a block's tab
+            // and an activation bar was painted over the frame it sits inside — and over the
+            // tab's text, which is how `loop [every 30s]` came out as `loop [ very 30s]`.
+            // 1. Lifelines (dashed vertical lines)
+            ctx.saveGState()
+            ctx.setStrokeColor(self.theme.effectiveLine().cgColor)
+            ctx.setLineWidth(0.75)
+            ctx.setLineDash(phase: 0, lengths: [6, 4])
+            if lifelines.isEmpty {
+                // Fallback: compute from actors
+                let maxY = messages.map(\.y).max() ?? 300
+                for actor in actors {
+                    ctx.move(to: CGPoint(x: actor.x, y: actor.y + actor.height))
+                    ctx.addLine(to: CGPoint(x: actor.x, y: maxY + 60))
+                    ctx.strokePath()
+                }
+            } else {
+                for ll in lifelines {
+                    ctx.move(to: CGPoint(x: ll.x, y: ll.topY))
+                    ctx.addLine(to: CGPoint(x: ll.x, y: ll.bottomY))
+                    ctx.strokePath()
+                }
+            }
+            ctx.restoreGState()
+
+            // 2. Activation bars
+            for act in activations {
+                let actRect = CGRect(x: act.x - act.width / 2, y: act.topY, width: act.width, height: act.bottomY - act.topY)
+                ctx.setFillColor(self.theme.effectiveSurface().cgColor)
+                ctx.fill(actRect)
+                ctx.setStrokeColor(self.theme.effectiveBorder().cgColor)
+                ctx.setLineWidth(config.strokeWidthInnerBox)
+                ctx.stroke(actRect)
+            }
+
+            // 3. Block regions (loop/alt/opt/par/critical), above both
             for block in blocks {
                 let blockRect = CGRect(x: block.x, y: block.y, width: block.width, height: block.height)
                 // Border only (transparent background, matching OSS)
@@ -30,8 +67,15 @@ extension DiagramRenderer {
 
                 // Tab label
                 let labelText = "\(block.type)\(block.label.isEmpty ? "" : " [\(block.label)]")"
-                let tabWidth = config.estimateTextWidth(labelText, fontSize: config.fontSizeEdgeLabel, fontWeight: config.fontWeightGroupHeader) + 16
+                // The tab holds the label, so it has to grow with it: widest line across,
+                // one row per line down. Sized for a single line, a wrapped label spilled
+                // out through the bottom edge.
+                let tabLines = labelText.components(separatedBy: "\n")
+                let tabWidth = tabLines.reduce(0.0) {
+                    max($0, config.estimateTextWidth($1, fontSize: config.fontSizeEdgeLabel, fontWeight: config.fontWeightGroupHeader))
+                } + 16
                 let tabHeight = config.sequenceTabHeight
+                    + Double(tabLines.count - 1) * config.fontSizeEdgeLabel * 1.3
                 let tabRect = CGRect(x: block.x, y: block.y, width: tabWidth, height: tabHeight)
                 ctx.setFillColor(self.theme.subgraphHeaderColor().cgColor)
                 ctx.fill(tabRect)
@@ -69,38 +113,6 @@ extension DiagramRenderer {
                         )
                     }
                 }
-            }
-
-            // 2. Lifelines (dashed vertical lines)
-            ctx.saveGState()
-            ctx.setStrokeColor(self.theme.effectiveLine().cgColor)
-            ctx.setLineWidth(0.75)
-            ctx.setLineDash(phase: 0, lengths: [6, 4])
-            if lifelines.isEmpty {
-                // Fallback: compute from actors
-                let maxY = messages.map(\.y).max() ?? 300
-                for actor in actors {
-                    ctx.move(to: CGPoint(x: actor.x, y: actor.y + actor.height))
-                    ctx.addLine(to: CGPoint(x: actor.x, y: maxY + 60))
-                    ctx.strokePath()
-                }
-            } else {
-                for ll in lifelines {
-                    ctx.move(to: CGPoint(x: ll.x, y: ll.topY))
-                    ctx.addLine(to: CGPoint(x: ll.x, y: ll.bottomY))
-                    ctx.strokePath()
-                }
-            }
-            ctx.restoreGState()
-
-            // 3. Activation bars
-            for act in activations {
-                let actRect = CGRect(x: act.x - act.width / 2, y: act.topY, width: act.width, height: act.bottomY - act.topY)
-                ctx.setFillColor(self.theme.effectiveSurface().cgColor)
-                ctx.fill(actRect)
-                ctx.setStrokeColor(self.theme.effectiveBorder().cgColor)
-                ctx.setLineWidth(config.strokeWidthInnerBox)
-                ctx.stroke(actRect)
             }
 
             // 4. Messages (arrows with labels)
@@ -145,9 +157,14 @@ extension DiagramRenderer {
                     ctx.restoreGState()
 
                     self._drawSequenceArrowHead(at: CGPoint(x: msg.x2, y: msg.y), from: CGPoint(x: msg.x1, y: msg.y), style: msg.arrowHead, in: ctx)
+                    // A multiline label is centred on its anchor, so extra lines would grow
+                    // downwards across the arrow. Lift the anchor by the lines above the
+                    // last one, leaving the bottom line where a single line would sit.
+                    let labelLines = msg.label.components(separatedBy: "\n").count
+                    let labelLift = CGFloat(labelLines - 1) / 2 * config.edgeLabelFont().pointSize * 1.3
                     self._drawTextInFlipped(
                         msg.label,
-                        at: CGPoint(x: (msg.x1 + msg.x2) / 2, y: msg.y - 8),
+                        at: CGPoint(x: (msg.x1 + msg.x2) / 2, y: msg.y - 8 - labelLift),
                         context: ctx, contentHeight: ch,
                         color: self.theme.effectiveMuted(),
                         font: config.edgeLabelFont(),
