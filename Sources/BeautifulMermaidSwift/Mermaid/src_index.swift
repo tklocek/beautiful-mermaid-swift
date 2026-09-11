@@ -91,13 +91,22 @@ private func _decodeXML(_ text: String) -> String {
         .replacingOccurrences(of: "&amp;", with: "&")
 }
 
-private func detectDiagramType(_ text: String) -> _DiagramRoutingType {
-    let firstLine = text
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+/// The lines a diagram is actually made of.
+///
+/// Blank lines and `%%` comments carry no structure, so nothing downstream should see
+/// them — including the type detection, which reads the first of these as the header.
+private func _diagramLines(_ text: String) -> [String] {
+    text
         .components(separatedBy: CharacterSet(charactersIn: "\n;"))
-        .first?
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .lowercased() ?? ""
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty && !$0.hasPrefix("%%") }
+}
+
+/// - Parameter header: the diagram's declaration — `_diagramLines(_:).first`, never the
+///   raw first line of the document. A document may open with comments or blank lines,
+///   and a header read from those matches no prefix and silently routes to flowchart.
+private func detectDiagramType(header: String) -> _DiagramRoutingType {
+    let firstLine = header.lowercased()
 
     if firstLine.range(of: "^sequencediagram\\s*$", options: .regularExpression) != nil {
         return .sequence
@@ -140,12 +149,10 @@ public func renderMermaidSVG(
     let colors = buildColors(options)
     let font = options.font ?? "Inter"
     let transparent = options.transparent ?? false
-    let diagramType = detectDiagramType(decodedText)
-
-    let lines = decodedText
-        .components(separatedBy: CharacterSet(charactersIn: "\n;"))
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty && !$0.hasPrefix("%%") }
+    // One line list, used both to choose the renderer and to feed it. Computing it twice
+    // is how the two came to disagree about comments in the first place.
+    let lines = _diagramLines(decodedText)
+    let diagramType = detectDiagramType(header: lines.first ?? "")
 
     switch diagramType {
     case .sequence:
