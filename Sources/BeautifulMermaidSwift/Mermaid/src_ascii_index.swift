@@ -455,11 +455,19 @@ open class original_src_ascii_index {
     // MARK: - Internal detection
 
     private static func detectDiagramTypeInternal(_ text: String) -> DetectedDiagramType {
+        // The declaration is the first line that is neither blank nor a `%%` comment: a
+        // document may open with either, and a header read from those matches no prefix
+        // below and silently routes to flowchart. `lazy` so that only the leading lines
+        // are trimmed, not every line of a long document.
+        //
+        // Newlines only, no `;`: unlike the SVG renderer this one does not accept
+        // semicolon-separated statements, and this fix does not change that.
         let firstLine = text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-            .first
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .lazy
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && !$0.hasPrefix("%%") }?
+            .lowercased()
             ?? ""
 
         if firstLine.range(of: #"^sequencediagram\s*$"#, options: .regularExpression) != nil {
