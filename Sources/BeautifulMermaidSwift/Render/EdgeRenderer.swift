@@ -21,6 +21,17 @@ public class EdgeRenderer {
         let baseLineWidth = config.strokeWidthConnector
         let lineWidth = style.strokeWidth ?? (baseLineWidth * style.lineStyle.widthMultiplier)
 
+        // An arrowed end stops where that end's apex does. Run the line to its own last
+        // point instead and the round cap shows past the apex as a spike, the head being
+        // inset by `arrowHeadTipInset` and the line not.
+        let reach = config.arrowHeadTipInset + lineWidth / 2
+        let drawn = trimming(
+            points,
+            start: style.sourceArrow == .none ? 0 : reach,
+            end: style.targetArrow == .none ? 0 : reach
+        )
+        guard drawn.count >= 2 else { return }
+
         context.saveGState()
         context.setStrokeColor(color.cgColor)
         context.setLineWidth(lineWidth)
@@ -31,9 +42,9 @@ public class EdgeRenderer {
             context.setLineDash(phase: 0, lengths: pattern)
         }
 
-        context.move(to: points[0])
-        for i in 1..<points.count {
-            context.addLine(to: points[i])
+        context.move(to: drawn[0])
+        for i in 1..<drawn.count {
+            context.addLine(to: drawn[i])
         }
         context.strokePath()
         context.restoreGState()
@@ -51,19 +62,73 @@ public class EdgeRenderer {
         let baseLineWidth = config.strokeWidthConnector
         let lineWidth = style.strokeWidth ?? (baseLineWidth * style.lineStyle.widthMultiplier)
 
+        let inset = config.arrowHeadTipInset
+
         if style.targetArrow != .none {
             let p0 = points[points.count - 2]
             let p1 = points[points.count - 1]
             let angle = atan2(p1.y - p0.y, p1.x - p0.x)
-            drawArrowHead(style.targetArrow, at: p1, angle: angle, lineWidth: lineWidth, color: arrowColor, in: context)
+            let tip = retreating(from: p1, towards: p0, by: inset)
+            drawArrowHead(style.targetArrow, at: tip, angle: angle, lineWidth: lineWidth, color: arrowColor, in: context)
         }
 
         if style.sourceArrow != .none {
             let p0 = points[1]
             let p1 = points[0]
             let angle = atan2(p1.y - p0.y, p1.x - p0.x)
-            drawArrowHead(style.sourceArrow, at: p1, angle: angle, lineWidth: lineWidth, color: arrowColor, in: context)
+            let tip = retreating(from: p1, towards: p0, by: inset)
+            drawArrowHead(style.sourceArrow, at: tip, angle: angle, lineWidth: lineWidth, color: arrowColor, in: context)
         }
+    }
+
+    // MARK: - Endpoint geometry
+
+    /// `point` pulled `distance` back along the segment arriving at it.
+    func retreating(from point: CGPoint, towards previous: CGPoint, by distance: CGFloat) -> CGPoint {
+        let dx = point.x - previous.x
+        let dy = point.y - previous.y
+        let length = hypot(dx, dy)
+        guard length > 0 else { return point }
+        let fraction = min(distance, length) / length
+        return CGPoint(x: point.x - dx * fraction, y: point.y - dy * fraction)
+    }
+
+    /// The polyline with `start` and `end` worth of length taken off its two ends.
+    ///
+    /// Returned untouched when the edge is too short to give that up: a line poking past
+    /// an arrow head is a smaller blemish than an edge that disappears.
+    func trimming(_ points: [CGPoint], start: CGFloat, end: CGFloat) -> [CGPoint] {
+        guard start > 0 || end > 0 else { return points }
+        let length = zip(points, points.dropFirst()).reduce(0) { $0 + hypot($1.1.x - $1.0.x, $1.1.y - $1.0.y) }
+        guard length > start + end else { return points }
+
+        var result = points
+        if start > 0 {
+            result = trimmingFront(result, by: start)
+        }
+        if end > 0 {
+            result = Array(trimmingFront(Array(result.reversed()), by: end).reversed())
+        }
+        return result
+    }
+
+    /// `points` with `distance` taken off the front, dropping whatever corners it passes.
+    func trimmingFront(_ points: [CGPoint], by distance: CGFloat) -> [CGPoint] {
+        var points = points
+        var remaining = distance
+        while points.count >= 2 {
+            let dx = points[1].x - points[0].x
+            let dy = points[1].y - points[0].y
+            let length = hypot(dx, dy)
+            if length > remaining {
+                let fraction = remaining / length
+                points[0] = CGPoint(x: points[0].x + dx * fraction, y: points[0].y + dy * fraction)
+                break
+            }
+            remaining -= length
+            points.removeFirst()
+        }
+        return points
     }
 
     private func drawArrowHead(

@@ -37,6 +37,14 @@ public struct RenderConfig: Sendable {
 
     public var arrowHeadWidth: CGFloat = 8.0
     public var arrowHeadHeight: CGFloat = 5.0
+    /// How far short of the edge's own last point the arrow head's apex is placed.
+    ///
+    /// That point sits on the target's boundary, and node shapes are painted after the
+    /// edges, so an apex left there is buried twice over: half the border stroke covers
+    /// it, and the head's own outline overhangs the apex by half its width again. What
+    /// comes out is a flat-topped arrow that looks cut off rather than pointed. 1.0
+    /// clears both halves and leaves a hair of daylight between tip and border.
+    public var arrowHeadTipInset: CGFloat = 1.0
 
     // MARK: - Spacing
 
