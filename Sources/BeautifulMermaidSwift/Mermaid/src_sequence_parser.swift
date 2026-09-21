@@ -302,7 +302,12 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             continue
         }
 
-        if let m = _match(#"^(loop|alt|opt|par|critical|break|rect)\s*(.*)$"#, line) {
+        // `\s+` rather than `\s*`, and the label optional: with `\s*` a keyword matched any
+        // line it merely *prefixed*, so `optimiser->>B: tune` opened an `opt` block labelled
+        // `imiser->>B: tune` and the message was gone. A block opened that way is never
+        // closed either — its `end` belongs to something else — so it is dropped at the end
+        // of the parse, and the diagram silently loses every message inside it.
+        if let m = _match(#"^(loop|alt|opt|par|critical|break|rect)(?:\s+(.*))?$"#, line) {
             blockStack.append(
                 _OpenBlock(
                     type: m[1],
@@ -315,7 +320,10 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             continue
         }
 
-        if let m = _match(#"^(else|and)\s*(.*)$"#, line), !blockStack.isEmpty {
+        // `option` is what divides a `critical` block, exactly as `else` divides an `alt`
+        // and `and` divides a `par`. Without it the branches of every `critical` fell
+        // through to the message parser, which cannot read them either, so they vanished.
+        if let m = _match(#"^(else|and|option)(?:\s+(.*))?$"#, line), !blockStack.isEmpty {
             _ = m[1]
             blockStack[blockStack.count - 1].dividers.append(
                 SequenceBlockDivider(
