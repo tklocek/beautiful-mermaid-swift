@@ -43,6 +43,17 @@ extension DiagramRenderer {
                 }
             }
 
+            // 0b. A `rect`'s tint, under everything but the participant boxes. It is a
+            //     background, and the structure it highlights — lifelines, bars, arrows —
+            //     has to stay legible on top of it. Painted with the frames in step 3 it
+            //     would have to be made translucent to avoid erasing them, which is not the
+            //     colour the author asked for.
+            for block in blocks where !block.hasTab {
+                let tint = block.fill.flatMap(BMColor.css) ?? self.theme.subgraphHeaderColor()
+                ctx.setFillColor(tint.cgColor)
+                ctx.fill(CGRect(x: block.x, y: block.y, width: block.width, height: block.height))
+            }
+
             // Order matters here. Lifelines and activation bars belong to the actors, so
             // they go down first; block frames and their tab labels are drawn over them.
             // Drawn the other way round, a dashed lifeline was stroked across a block's tab
@@ -70,6 +81,23 @@ extension DiagramRenderer {
             }
             ctx.restoreGState()
 
+            // 1b. The cross that ends a destroyed participant's lifeline. Solid, and drawn
+            //     outside the dashed state above: a line that simply stops reads as a
+            //     diagram that ran out of room rather than a participant that left.
+            for ll in lifelines where ll.endsDestroyed {
+                let reach = CGFloat(destroyMarkReach)
+                ctx.saveGState()
+                ctx.setStrokeColor(self.theme.effectiveLine().cgColor)
+                ctx.setLineWidth(1.5)
+                ctx.setLineCap(.round)
+                ctx.move(to: CGPoint(x: ll.x - reach, y: ll.bottomY - reach))
+                ctx.addLine(to: CGPoint(x: ll.x + reach, y: ll.bottomY + reach))
+                ctx.move(to: CGPoint(x: ll.x - reach, y: ll.bottomY + reach))
+                ctx.addLine(to: CGPoint(x: ll.x + reach, y: ll.bottomY - reach))
+                ctx.strokePath()
+                ctx.restoreGState()
+            }
+
             // 2. Activation bars
             for act in activations {
                 // `act.x` is the bar's left edge: the layout has already taken half the
@@ -87,6 +115,10 @@ extension DiagramRenderer {
             // 3. Block regions (loop/alt/opt/par/critical), above both
             for block in blocks {
                 let blockRect = CGRect(x: block.x, y: block.y, width: block.width, height: block.height)
+
+                // The tints were painted in step 0b, under the structure they highlight.
+                guard block.hasTab else { continue }
+
                 // Border only (transparent background, matching OSS)
                 ctx.setStrokeColor(self.theme.effectiveBorder().cgColor)
                 ctx.setLineWidth(config.strokeWidthOuterBox)

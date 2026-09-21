@@ -43,6 +43,12 @@ public struct SequenceActor: Sendable {
     public var id: String
     public var label: String
     public var type: String
+    /// The message that brings this participant into the diagram, from a `create` line —
+    /// `nil` for one that is there from the start.
+    public var createdAtMessage: Int? = nil
+    /// The message that removes it, from a `destroy` line — `nil` for one that stays to the
+    /// end.
+    public var destroyedAtMessage: Int? = nil
 }
 
 public struct SequenceMessage: Sendable {
@@ -57,6 +63,18 @@ public struct SequenceMessage: Sendable {
     public var sequenceNumber: Int? = nil
 }
 
+public extension SequenceBlock {
+    /// Whether this block is drawn with a labelled tab in its top-left corner.
+    ///
+    /// Every kind is, except `rect`: Mermaid's `rect` is not a labelled frame but a tinted
+    /// region behind the messages, and its argument is a colour rather than a name. Drawn
+    /// with a tab it announced itself as `rect [rgb(200, 150, 255)]`, which is a CSS
+    /// expression printed onto the diagram.
+    var hasTab: Bool { Self.hasTab(type: type) }
+
+    static func hasTab(type: String) -> Bool { type.lowercased() != "rect" }
+}
+
 public struct SequenceBlockDivider: Sendable {
     public var index: Int
     public var label: String
@@ -65,6 +83,10 @@ public struct SequenceBlockDivider: Sendable {
 public struct SequenceBlock: Sendable {
     public var type: String
     public var label: String
+    /// A `rect`'s background colour, as the author wrote it — `rgb(200, 150, 255)`, `#eef`
+    /// or a named colour. `nil` on every other kind of block, and on a `rect` whose
+    /// argument is not a colour at all.
+    public var fill: String? = nil
     public var startIndex: Int
     public var endIndex: Int
     public var dividers: [SequenceBlockDivider]
@@ -127,6 +149,9 @@ public struct SequenceLifeline: Sendable {
     public var x: Double
     public var topY: Double
     public var bottomY: Double
+    /// Whether the line ends because the participant was destroyed, which is drawn as a
+    /// cross rather than simply stopping.
+    public var endsDestroyed: Bool = false
 }
 
 public struct PositionedSequenceMessage: Sendable {
@@ -159,11 +184,18 @@ public struct PositionedSequenceBlockDivider: Sendable {
 public struct PositionedSequenceBlock: Sendable {
     public var type: String
     public var label: String
+    /// See `SequenceBlock.fill`.
+    public var fill: String? = nil
     public var x: Double
     public var y: Double
     public var width: Double
     public var height: Double
     public var dividers: [PositionedSequenceBlockDivider]
+}
+
+public extension PositionedSequenceBlock {
+    /// See `SequenceBlock.hasTab`.
+    var hasTab: Bool { SequenceBlock.hasTab(type: type) }
 }
 
 public struct PositionedSequenceNote: Sendable {
@@ -190,6 +222,7 @@ public enum SequenceParserError: Error, LocalizedError {
 private struct _OpenBlock {
     var type: String
     var label: String
+    var fill: String?
     var startIndex: Int
     var dividers: [SequenceBlockDivider]
     var depth: Int
@@ -269,6 +302,36 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             continue
         }
 
+        // `create participant X` / `create actor X as Label`, and `destroy X`. Both refer
+        // to the message *below* them, the way Mermaid writes them. Neither was known, so
+        // the `create` line was dropped and the participant appeared at the top with
+        // everyone else — and `destroy` was dropped too, leaving a lifeline running to the
+        // bottom of a diagram the participant had left.
+        if let m = _match(#"^create\s+(participant|actor)\s+(\S+?)(?:\s+as\s+(.+))?$"#, line) {
+            let id = m[2]
+            let label = _normalizeLineBreaks((m.count > 3 ? m[3] : "").isEmpty ? id : m[3])
+            if !actorIds.contains(id) {
+                actorIds.insert(id)
+                diagram.actors.append(
+                    SequenceActor(id: id, label: label, type: m[1].lowercased(),
+                                  createdAtMessage: diagram.messages.count)
+                )
+            }
+            if openBox != nil, !openBox!.actorIds.contains(id) {
+                openBox!.actorIds.append(id)
+            }
+            continue
+        }
+
+        if let m = _match(#"^destroy\s+(\S+)\s*$"#, line, caseInsensitive: true) {
+            let id = m[1]
+            _ensureActor(&diagram, &actorIds, id)
+            if let index = diagram.actors.firstIndex(where: { $0.id == id }) {
+                diagram.actors[index].destroyedAtMessage = diagram.messages.count
+            }
+            continue
+        }
+
         if let m = _match(#"^(participant|actor)\s+(\S+?)(?:\s+as\s+(.+))?$"#, line) {
             let type = m[1].lowercased()
             let id = m[2]
@@ -302,11 +365,23 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             continue
         }
 
-        if let m = _match(#"^(loop|alt|opt|par|critical|break|rect)\s*(.*)$"#, line) {
+        // `\s+` rather than `\s*`, and the label optional: with `\s*` a keyword matched any
+        // line it merely *prefixed*, so `optimiser->>B: tune` opened an `opt` block labelled
+        // `imiser->>B: tune` and the message was gone. A block opened that way is never
+        // closed either — its `end` belongs to something else — so it is dropped at the end
+        // of the parse, and the diagram silently loses every message inside it.
+        if let m = _match(#"^(loop|alt|opt|par|critical|break|rect)(?:\s+(.*))?$"#, line) {
+            let type = m[1]
+            let argument = m[2].trimmingCharacters(in: .whitespacesAndNewlines)
+            // A `rect`'s argument is a colour, not a name. Kept as the author wrote it so
+            // each renderer can hand it to whatever understands colours there, and dropped
+            // from the label so nothing prints a CSS expression onto the diagram.
+            let isTint = !SequenceBlock.hasTab(type: type)
             blockStack.append(
                 _OpenBlock(
-                    type: m[1],
-                    label: _normalizeLineBreaks(m[2].trimmingCharacters(in: .whitespacesAndNewlines)),
+                    type: type,
+                    label: isTint ? "" : _normalizeLineBreaks(argument),
+                    fill: isTint && !argument.isEmpty ? argument : nil,
                     startIndex: diagram.messages.count,
                     dividers: [],
                     depth: blockStack.count
@@ -315,7 +390,10 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
             continue
         }
 
-        if let m = _match(#"^(else|and)\s*(.*)$"#, line), !blockStack.isEmpty {
+        // `option` is what divides a `critical` block, exactly as `else` divides an `alt`
+        // and `and` divides a `par`. Without it the branches of every `critical` fell
+        // through to the message parser, which cannot read them either, so they vanished.
+        if let m = _match(#"^(else|and|option)(?:\s+(.*))?$"#, line), !blockStack.isEmpty {
             _ = m[1]
             blockStack[blockStack.count - 1].dividers.append(
                 SequenceBlockDivider(
@@ -332,6 +410,7 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
                 SequenceBlock(
                     type: completed.type,
                     label: completed.label,
+                    fill: completed.fill,
                     startIndex: completed.startIndex,
                     endIndex: max(diagram.messages.count - 1, completed.startIndex),
                     dividers: completed.dividers,

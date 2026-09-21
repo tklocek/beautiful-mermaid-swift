@@ -137,7 +137,7 @@ private func _layoutSequenceDiagramEntry(
     // the headers drop to leave room for it.
     let boxHeaderRoom = diagram.boxes.isEmpty ? 0 : _SEQ.boxLabelHeight + _SEQ.boxPad
     let actorY = _SEQ.padding + boxHeaderRoom
-    let actors: [PositionedSequenceActor] = diagram.actors.enumerated().map { idx, actor in
+    var actors: [PositionedSequenceActor] = diagram.actors.enumerated().map { idx, actor in
         PositionedSequenceActor(
             id: actor.id,
             label: actor.label,
@@ -178,6 +178,12 @@ private func _layoutSequenceDiagramEntry(
     var messages: [PositionedSequenceMessage] = []
 
     var extraSpaceBefore: [Int: Double] = [:]
+    // A participant created partway down needs a row of its own for its header, between the
+    // message above and the one that creates it.
+    for actor in diagram.actors {
+        guard let created = actor.createdAtMessage else { continue }
+        extraSpaceBefore[created] = max(extraSpaceBefore[created] ?? 0, _SEQ.actorHeight + 8)
+    }
     for block in diagram.blocks {
         extraSpaceBefore[block.startIndex] = max(extraSpaceBefore[block.startIndex] ?? 0, _SEQ.blockHeaderExtra)
         for div in block.dividers {
@@ -351,7 +357,7 @@ private func _layoutSequenceDiagramEntry(
         // A wrapped tab is taller than the padding the frame reserves above its first
         // message, so the frame's ceiling has to rise with it.
         let tabLineCount = _labelLineCount("\(block.type)\(block.label.isEmpty ? "" : " [\(block.label)]")")
-        let tabOverflow = max(
+        let tabOverflow = !block.hasTab ? 0 : max(
             0,
             _SEQ.blockTabHeight
                 + Double(tabLineCount - 1) * original_src_styles.FONT_SIZES.edgeLabel * original_src_text_metrics.LINE_HEIGHT_RATIO
@@ -458,12 +464,14 @@ private func _layoutSequenceDiagramEntry(
         // is not the place to fix that: every diagram kind depends on it, and it matches
         // the TypeScript original. Compensate here, where the frame is sized, and leave a
         // frame slightly wider than strictly needed rather than a tab hanging out of it.
-        let tabWidth = _labelWidth(
-            tabText,
-            original_src_styles.FONT_SIZES.edgeLabel,
-            original_src_styles.FONT_WEIGHTS.groupHeader
-        ) * _SEQ.textMetricsSafety + _SEQ.blockTabPadX
-        enclosingRight = max(enclosingRight, blockLeft + tabWidth)
+        if block.hasTab {
+            let tabWidth = _labelWidth(
+                tabText,
+                original_src_styles.FONT_SIZES.edgeLabel,
+                original_src_styles.FONT_WEIGHTS.groupHeader
+            ) * _SEQ.textMetricsSafety + _SEQ.blockTabPadX
+            enclosingRight = max(enclosingRight, blockLeft + tabWidth)
+        }
 
         if block.startIndex <= block.endIndex {
             for mi in block.startIndex...block.endIndex where mi >= 0 && mi < messages.count {
@@ -481,6 +489,7 @@ private func _layoutSequenceDiagramEntry(
         return PositionedSequenceBlock(
             type: block.type,
             label: block.label,
+            fill: block.fill,
             x: blockLeft,
             y: blockTop,
             width: enclosingRight - blockLeft,
@@ -532,6 +541,13 @@ private func _layoutSequenceDiagramEntry(
             position: note.position,
             actors: note.actorIds
         )
+    }
+
+    // A created participant's header sits just above the message that creates it, so the
+    // arrow lands on the top of its lifeline rather than in the middle of its box.
+    for (idx, actor) in diagram.actors.enumerated() {
+        guard let created = actor.createdAtMessage, created < messages.count else { continue }
+        actors[idx].y = max(actorY, messages[created].y - _SEQ.actorHeight - 4)
     }
 
     let diagramBottom = messageY + _SEQ.padding
@@ -602,11 +618,21 @@ private func _layoutSequenceDiagramEntry(
     }
 
     let lifelines: [SequenceLifeline] = diagram.actors.enumerated().map { idx, actor in
-        SequenceLifeline(
+        // A created participant's line begins under its own header rather than under the
+        // row everyone else starts from; a destroyed one's ends at the message that
+        // destroyed it, with a cross rather than simply stopping.
+        var bottom = diagramBottom - _SEQ.padding
+        var destroyed = false
+        if let end = actor.destroyedAtMessage, end < messages.count {
+            bottom = messages[end].y
+            destroyed = true
+        }
+        return SequenceLifeline(
             actorId: actor.id,
             x: actorCenterX[idx],
-            topY: actorY + _SEQ.actorHeight,
-            bottomY: diagramBottom - _SEQ.padding
+            topY: shiftedActors[idx].y + _SEQ.actorHeight,
+            bottomY: max(bottom, shiftedActors[idx].y + _SEQ.actorHeight),
+            endsDestroyed: destroyed
         )
     }
 

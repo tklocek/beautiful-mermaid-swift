@@ -127,6 +127,49 @@ extension BMColor {
         self.init(red: r, green: g, blue: b, alpha: a)
     }
 
+    /// A colour written the way CSS writes one: `#abc`, `#abcd`, `#aabbcc`, `#aabbccdd`,
+    /// `rgb(r, g, b)` or `rgba(r, g, b, a)`.
+    ///
+    /// `nil` for anything else — a named colour, a gradient, a variable — rather than the
+    /// black `init(hex:)` hands back for text it cannot read. A caller that has a sensible
+    /// default can then use it, which is better than painting something black because it
+    /// was spelled `rebeccapurple`.
+    static func css(_ text: String) -> BMColor? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if value.hasPrefix("#") {
+            var digits = Array(value.dropFirst())
+            if digits.count == 3 || digits.count == 4 { digits = digits.flatMap { [$0, $0] } }
+            guard digits.count == 6 || digits.count == 8,
+                  digits.allSatisfy({ $0.isHexDigit })
+            else { return nil }
+            return BMColor(hex: String(digits))
+        }
+
+        guard value.hasPrefix("rgb"), let open = value.firstIndex(of: "("), value.hasSuffix(")")
+        else { return nil }
+
+        let arguments = value[value.index(after: open)..<value.index(before: value.endIndex)]
+            .split(whereSeparator: { $0 == "," || $0 == "/" || $0 == " " })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard arguments.count == 3 || arguments.count == 4 else { return nil }
+
+        func channel(_ text: String, of scale: Double) -> CGFloat? {
+            if text.hasSuffix("%") {
+                return Double(text.dropLast()).map { CGFloat(max(0, min(1, $0 / 100))) }
+            }
+            return Double(text).map { CGFloat(max(0, min(1, $0 / scale))) }
+        }
+        guard let red = channel(arguments[0], of: 255),
+              let green = channel(arguments[1], of: 255),
+              let blue = channel(arguments[2], of: 255),
+              let alpha = arguments.count == 4 ? channel(arguments[3], of: 1) : 1
+        else { return nil }
+
+        return BMColor(red: red, green: green, blue: blue, alpha: alpha)
+    }
+
     /// Compare two colors by their RGBA components (avoids hexString round-trip loss and alpha drop)
     public func bmColorEquals(_ other: BMColor) -> Bool {
         var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
