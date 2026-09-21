@@ -159,8 +159,23 @@ private func renderActor(_ actor: PositionedSequenceActor) -> String {
     return parts.joined(separator: "\n")
 }
 
+/// Half the width of the cross that closes a destroyed participant's lifeline.
+let destroyMarkReach: Double = 7
+
 private func renderLifeline(_ lifeline: SequenceLifeline) -> String {
-    "<line class=\"lifeline\" data-actor=\"\(escapeAttr(lifeline.actorId))\" x1=\"\(lifeline.x)\" y1=\"\(lifeline.topY)\" x2=\"\(lifeline.x)\" y2=\"\(lifeline.bottomY)\" stroke=\"var(--_line)\" stroke-width=\"0.75\" stroke-dasharray=\"6 4\" />"
+    let line = "<line class=\"lifeline\" data-actor=\"\(escapeAttr(lifeline.actorId))\" x1=\"\(lifeline.x)\" y1=\"\(lifeline.topY)\" x2=\"\(lifeline.x)\" y2=\"\(lifeline.bottomY)\" stroke=\"var(--_line)\" stroke-width=\"0.75\" stroke-dasharray=\"6 4\" />"
+    guard lifeline.endsDestroyed else { return line }
+
+    // A line that simply stops reads as a diagram that ran out of room. The cross is what
+    // says the participant is gone, and it is solid because the line it ends is not.
+    let reach = destroyMarkReach
+    let x = lifeline.x, y = lifeline.bottomY
+    let stroke = "stroke=\"var(--_line)\" stroke-width=\"1.5\""
+    return line + "\n"
+        + "<g class=\"destroy\" data-actor=\"\(escapeAttr(lifeline.actorId))\">"
+        + "<line x1=\"\(x - reach)\" y1=\"\(y - reach)\" x2=\"\(x + reach)\" y2=\"\(y + reach)\" \(stroke) />"
+        + "<line x1=\"\(x - reach)\" y1=\"\(y + reach)\" x2=\"\(x + reach)\" y2=\"\(y - reach)\" \(stroke) />"
+        + "</g>"
 }
 
 private func renderActivation(_ activation: SequenceActivation) -> String {

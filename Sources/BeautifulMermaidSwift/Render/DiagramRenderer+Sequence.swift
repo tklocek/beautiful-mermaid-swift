@@ -81,6 +81,23 @@ extension DiagramRenderer {
             }
             ctx.restoreGState()
 
+            // 1b. The cross that ends a destroyed participant's lifeline. Solid, and drawn
+            //     outside the dashed state above: a line that simply stops reads as a
+            //     diagram that ran out of room rather than a participant that left.
+            for ll in lifelines where ll.endsDestroyed {
+                let reach = CGFloat(destroyMarkReach)
+                ctx.saveGState()
+                ctx.setStrokeColor(self.theme.effectiveLine().cgColor)
+                ctx.setLineWidth(1.5)
+                ctx.setLineCap(.round)
+                ctx.move(to: CGPoint(x: ll.x - reach, y: ll.bottomY - reach))
+                ctx.addLine(to: CGPoint(x: ll.x + reach, y: ll.bottomY + reach))
+                ctx.move(to: CGPoint(x: ll.x - reach, y: ll.bottomY + reach))
+                ctx.addLine(to: CGPoint(x: ll.x + reach, y: ll.bottomY - reach))
+                ctx.strokePath()
+                ctx.restoreGState()
+            }
+
             // 2. Activation bars
             for act in activations {
                 // `act.x` is the bar's left edge: the layout has already taken half the

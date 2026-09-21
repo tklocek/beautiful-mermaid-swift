@@ -43,6 +43,12 @@ public struct SequenceActor: Sendable {
     public var id: String
     public var label: String
     public var type: String
+    /// The message that brings this participant into the diagram, from a `create` line —
+    /// `nil` for one that is there from the start.
+    public var createdAtMessage: Int? = nil
+    /// The message that removes it, from a `destroy` line — `nil` for one that stays to the
+    /// end.
+    public var destroyedAtMessage: Int? = nil
 }
 
 public struct SequenceMessage: Sendable {
@@ -143,6 +149,9 @@ public struct SequenceLifeline: Sendable {
     public var x: Double
     public var topY: Double
     public var bottomY: Double
+    /// Whether the line ends because the participant was destroyed, which is drawn as a
+    /// cross rather than simply stopping.
+    public var endsDestroyed: Bool = false
 }
 
 public struct PositionedSequenceMessage: Sendable {
@@ -290,6 +299,36 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
                     afterIndex: diagram.messages.count - 1
                 )
             )
+            continue
+        }
+
+        // `create participant X` / `create actor X as Label`, and `destroy X`. Both refer
+        // to the message *below* them, the way Mermaid writes them. Neither was known, so
+        // the `create` line was dropped and the participant appeared at the top with
+        // everyone else — and `destroy` was dropped too, leaving a lifeline running to the
+        // bottom of a diagram the participant had left.
+        if let m = _match(#"^create\s+(participant|actor)\s+(\S+?)(?:\s+as\s+(.+))?$"#, line) {
+            let id = m[2]
+            let label = _normalizeLineBreaks((m.count > 3 ? m[3] : "").isEmpty ? id : m[3])
+            if !actorIds.contains(id) {
+                actorIds.insert(id)
+                diagram.actors.append(
+                    SequenceActor(id: id, label: label, type: m[1].lowercased(),
+                                  createdAtMessage: diagram.messages.count)
+                )
+            }
+            if openBox != nil, !openBox!.actorIds.contains(id) {
+                openBox!.actorIds.append(id)
+            }
+            continue
+        }
+
+        if let m = _match(#"^destroy\s+(\S+)\s*$"#, line, caseInsensitive: true) {
+            let id = m[1]
+            _ensureActor(&diagram, &actorIds, id)
+            if let index = diagram.actors.firstIndex(where: { $0.id == id }) {
+                diagram.actors[index].destroyedAtMessage = diagram.messages.count
+            }
             continue
         }
 
