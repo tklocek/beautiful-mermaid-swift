@@ -271,17 +271,21 @@ public struct LayoutConfig: Sendable, Equatable {
     public var layerSpacing: CGFloat
     /// Space between disconnected components (default: 20)
     public var componentSpacing: CGFloat
+    /// Whether nodes keep the order they were declared in (default: true)
+    public var keepsDeclarationOrder: Bool
 
     public init(
         padding: CGFloat = 40,
         nodeSpacing: CGFloat = 28,
         layerSpacing: CGFloat = 48,
-        componentSpacing: CGFloat = 20
+        componentSpacing: CGFloat = 20,
+        keepsDeclarationOrder: Bool = true
     ) {
         self.padding = padding
         self.nodeSpacing = nodeSpacing
         self.layerSpacing = layerSpacing
         self.componentSpacing = componentSpacing
+        self.keepsDeclarationOrder = keepsDeclarationOrder
     }
 }
 
