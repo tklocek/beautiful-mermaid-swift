@@ -351,7 +351,7 @@ private func _layoutSequenceDiagramEntry(
         // A wrapped tab is taller than the padding the frame reserves above its first
         // message, so the frame's ceiling has to rise with it.
         let tabLineCount = _labelLineCount("\(block.type)\(block.label.isEmpty ? "" : " [\(block.label)]")")
-        let tabOverflow = max(
+        let tabOverflow = !block.hasTab ? 0 : max(
             0,
             _SEQ.blockTabHeight
                 + Double(tabLineCount - 1) * original_src_styles.FONT_SIZES.edgeLabel * original_src_text_metrics.LINE_HEIGHT_RATIO
@@ -458,12 +458,14 @@ private func _layoutSequenceDiagramEntry(
         // is not the place to fix that: every diagram kind depends on it, and it matches
         // the TypeScript original. Compensate here, where the frame is sized, and leave a
         // frame slightly wider than strictly needed rather than a tab hanging out of it.
-        let tabWidth = _labelWidth(
-            tabText,
-            original_src_styles.FONT_SIZES.edgeLabel,
-            original_src_styles.FONT_WEIGHTS.groupHeader
-        ) * _SEQ.textMetricsSafety + _SEQ.blockTabPadX
-        enclosingRight = max(enclosingRight, blockLeft + tabWidth)
+        if block.hasTab {
+            let tabWidth = _labelWidth(
+                tabText,
+                original_src_styles.FONT_SIZES.edgeLabel,
+                original_src_styles.FONT_WEIGHTS.groupHeader
+            ) * _SEQ.textMetricsSafety + _SEQ.blockTabPadX
+            enclosingRight = max(enclosingRight, blockLeft + tabWidth)
+        }
 
         if block.startIndex <= block.endIndex {
             for mi in block.startIndex...block.endIndex where mi >= 0 && mi < messages.count {
@@ -481,6 +483,7 @@ private func _layoutSequenceDiagramEntry(
         return PositionedSequenceBlock(
             type: block.type,
             label: block.label,
+            fill: block.fill,
             x: blockLeft,
             y: blockTop,
             width: enclosingRight - blockLeft,

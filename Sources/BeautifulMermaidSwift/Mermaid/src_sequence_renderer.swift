@@ -55,6 +55,14 @@ private func _renderSequenceSvgEntry(
         parts.append("</g>")
     }
 
+    // A `rect`'s tint goes under everything: it is a background, and the structure it
+    // highlights — lifelines, bars, arrows — has to stay legible on top of it. Painted with
+    // the frames instead it would have to be made translucent to avoid erasing them, which
+    // is not the colour the author asked for.
+    for block in diagram.blocks where !block.hasTab {
+        parts.append(renderBlock(block))
+    }
+
     // SVG paints in document order. Lifelines and activation bars belong to the actors,
     // so they are emitted first and block frames sit above them. Emitted the other way
     // round, a dashed lifeline was drawn across a block's tab and an activation bar over
@@ -65,7 +73,7 @@ private func _renderSequenceSvgEntry(
     for activation in diagram.activations {
         parts.append(renderActivation(activation))
     }
-    for block in diagram.blocks {
+    for block in diagram.blocks where block.hasTab {
         parts.append(renderBlock(block))
     }
     for message in diagram.messages {
@@ -227,11 +235,25 @@ private func renderMessage(_ msg: PositionedSequenceMessage) -> String {
 /// grey before it.
 private let blockTabPadX: Double = 8
 
+
 private func renderBlock(_ block: PositionedSequenceBlock) -> String {
     var parts: [String] = []
     let labelAttr = block.label.isEmpty ? "" : " data-label=\"\(escapeAttr(block.label))\""
 
     parts.append("<g class=\"block\" data-type=\"\(escapeAttr(block.type))\"\(labelAttr)>")
+
+    // A `rect` is a tinted region rather than a labelled frame: the author's colour, no
+    // border and no tab. It is emitted before the lifelines rather than with the other
+    // blocks, so the colour can be exactly what was asked for.
+    guard block.hasTab else {
+        parts.append(
+            "  <rect x=\"\(block.x)\" y=\"\(block.y)\" width=\"\(block.width)\" height=\"\(block.height)\" "
+            + "fill=\"\(escapeAttr(block.fill ?? "var(--_group-hdr)"))\" stroke=\"none\" />"
+        )
+        parts.append("</g>")
+        return parts.joined(separator: "\n")
+    }
+
     parts.append(
         "  <rect x=\"\(block.x)\" y=\"\(block.y)\" width=\"\(block.width)\" height=\"\(block.height)\" rx=\"0\" ry=\"0\" fill=\"none\" stroke=\"var(--_node-stroke)\" stroke-width=\"\(original_src_styles.STROKE_WIDTHS.outerBox)\" />"
     )

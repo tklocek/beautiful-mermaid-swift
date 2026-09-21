@@ -57,6 +57,18 @@ public struct SequenceMessage: Sendable {
     public var sequenceNumber: Int? = nil
 }
 
+public extension SequenceBlock {
+    /// Whether this block is drawn with a labelled tab in its top-left corner.
+    ///
+    /// Every kind is, except `rect`: Mermaid's `rect` is not a labelled frame but a tinted
+    /// region behind the messages, and its argument is a colour rather than a name. Drawn
+    /// with a tab it announced itself as `rect [rgb(200, 150, 255)]`, which is a CSS
+    /// expression printed onto the diagram.
+    var hasTab: Bool { Self.hasTab(type: type) }
+
+    static func hasTab(type: String) -> Bool { type.lowercased() != "rect" }
+}
+
 public struct SequenceBlockDivider: Sendable {
     public var index: Int
     public var label: String
@@ -65,6 +77,10 @@ public struct SequenceBlockDivider: Sendable {
 public struct SequenceBlock: Sendable {
     public var type: String
     public var label: String
+    /// A `rect`'s background colour, as the author wrote it — `rgb(200, 150, 255)`, `#eef`
+    /// or a named colour. `nil` on every other kind of block, and on a `rect` whose
+    /// argument is not a colour at all.
+    public var fill: String? = nil
     public var startIndex: Int
     public var endIndex: Int
     public var dividers: [SequenceBlockDivider]
@@ -159,11 +175,18 @@ public struct PositionedSequenceBlockDivider: Sendable {
 public struct PositionedSequenceBlock: Sendable {
     public var type: String
     public var label: String
+    /// See `SequenceBlock.fill`.
+    public var fill: String? = nil
     public var x: Double
     public var y: Double
     public var width: Double
     public var height: Double
     public var dividers: [PositionedSequenceBlockDivider]
+}
+
+public extension PositionedSequenceBlock {
+    /// See `SequenceBlock.hasTab`.
+    var hasTab: Bool { SequenceBlock.hasTab(type: type) }
 }
 
 public struct PositionedSequenceNote: Sendable {
@@ -190,6 +213,7 @@ public enum SequenceParserError: Error, LocalizedError {
 private struct _OpenBlock {
     var type: String
     var label: String
+    var fill: String?
     var startIndex: Int
     var dividers: [SequenceBlockDivider]
     var depth: Int
@@ -308,10 +332,17 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
         // closed either — its `end` belongs to something else — so it is dropped at the end
         // of the parse, and the diagram silently loses every message inside it.
         if let m = _match(#"^(loop|alt|opt|par|critical|break|rect)(?:\s+(.*))?$"#, line) {
+            let type = m[1]
+            let argument = m[2].trimmingCharacters(in: .whitespacesAndNewlines)
+            // A `rect`'s argument is a colour, not a name. Kept as the author wrote it so
+            // each renderer can hand it to whatever understands colours there, and dropped
+            // from the label so nothing prints a CSS expression onto the diagram.
+            let isTint = !SequenceBlock.hasTab(type: type)
             blockStack.append(
                 _OpenBlock(
-                    type: m[1],
-                    label: _normalizeLineBreaks(m[2].trimmingCharacters(in: .whitespacesAndNewlines)),
+                    type: type,
+                    label: isTint ? "" : _normalizeLineBreaks(argument),
+                    fill: isTint && !argument.isEmpty ? argument : nil,
                     startIndex: diagram.messages.count,
                     dividers: [],
                     depth: blockStack.count
@@ -340,6 +371,7 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
                 SequenceBlock(
                     type: completed.type,
                     label: completed.label,
+                    fill: completed.fill,
                     startIndex: completed.startIndex,
                     endIndex: max(diagram.messages.count - 1, completed.startIndex),
                     dividers: completed.dividers,

@@ -43,6 +43,17 @@ extension DiagramRenderer {
                 }
             }
 
+            // 0b. A `rect`'s tint, under everything but the participant boxes. It is a
+            //     background, and the structure it highlights — lifelines, bars, arrows —
+            //     has to stay legible on top of it. Painted with the frames in step 3 it
+            //     would have to be made translucent to avoid erasing them, which is not the
+            //     colour the author asked for.
+            for block in blocks where !block.hasTab {
+                let tint = block.fill.flatMap(BMColor.css) ?? self.theme.subgraphHeaderColor()
+                ctx.setFillColor(tint.cgColor)
+                ctx.fill(CGRect(x: block.x, y: block.y, width: block.width, height: block.height))
+            }
+
             // Order matters here. Lifelines and activation bars belong to the actors, so
             // they go down first; block frames and their tab labels are drawn over them.
             // Drawn the other way round, a dashed lifeline was stroked across a block's tab
@@ -87,6 +98,10 @@ extension DiagramRenderer {
             // 3. Block regions (loop/alt/opt/par/critical), above both
             for block in blocks {
                 let blockRect = CGRect(x: block.x, y: block.y, width: block.width, height: block.height)
+
+                // The tints were painted in step 0b, under the structure they highlight.
+                guard block.hasTab else { continue }
+
                 // Border only (transparent background, matching OSS)
                 ctx.setStrokeColor(self.theme.effectiveBorder().cgColor)
                 ctx.setLineWidth(config.strokeWidthOuterBox)
