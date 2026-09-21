@@ -1261,6 +1261,10 @@ private func _layoutGraphSyncWithConfig(
 }
 
 /// Patch ELK layout options on a built graph with LayoutConfig values.
+///
+/// Spacing is patched on the root only — ELK inherits it. `keepsDeclarationOrder` is not
+/// inherited and has to be written onto every node that carries layout options of its own,
+/// which is why this recurses where the rest of the function does not.
 private func _applyLayoutConfig(_ config: LayoutConfig, to elkGraph: inout _ElkNode) {
     var opts = (elkGraph["layoutOptions"] as? [String: String]) ?? [:]
     let p = Int(config.padding)
@@ -1269,6 +1273,41 @@ private func _applyLayoutConfig(_ config: LayoutConfig, to elkGraph: inout _ElkN
     opts["elk.padding"] = "[top=\(p),left=\(p),bottom=\(p),right=\(p)]"
     opts["elk.spacing.componentComponent"] = "\(Int(config.componentSpacing))"
     elkGraph["layoutOptions"] = opts
+
+    if !config.keepsDeclarationOrder {
+        _dropModelOrder(in: &elkGraph)
+    }
+}
+
+/// Turns `considerModelOrder` off throughout a built graph.
+///
+/// **What this trades, and why it is offered at all.** `NODES_AND_EDGES` is what makes nodes
+/// appear in the order they were written, and it is worth having: a diagram whose boxes move
+/// when you add an unrelated line is a diagram you cannot read twice. It is also, in this port,
+/// the single most expensive thing in a layout. `SortByInputModelProcessor` sorts each layer
+/// with an insertion sort — O(n²) comparisons — whose comparator maintains a transitive closure
+/// in a `Set` on every comparison, which makes a wide layer cubic.
+///
+/// Measured on this port, Release, flowcharts built from a generator: a 1,600-edge tree lays out
+/// in 8,023 ms with model order and **455 ms** without; 3,200 disconnected pairs, 8,665 ms
+/// against 1,694. Narrow graphs are unaffected — a 3,200-edge chain is 494 ms either way —
+/// because the cost is in the width of a layer rather than in the size of the graph.
+///
+/// So: keep it for the diagrams people read, and let a caller who is watching a clock trade it
+/// away. A caller with three thousand nodes on screen cannot perceive declaration order anyway.
+private func _dropModelOrder(in node: inout _ElkNode) {
+    if var opts = node["layoutOptions"] as? [String: String] {
+        if opts["elk.layered.considerModelOrder.strategy"] != nil {
+            opts["elk.layered.considerModelOrder.strategy"] = "NONE"
+            node["layoutOptions"] = opts
+        }
+    }
+    if var children = node["children"] as? [_ElkNode] {
+        for index in children.indices {
+            _dropModelOrder(in: &children[index])
+        }
+        node["children"] = children
+    }
 }
 
 public func layoutGraphWithDiagnosticsSync(
