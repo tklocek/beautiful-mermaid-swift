@@ -11,6 +11,8 @@ public struct RenderOptions: Sendable {
     public var surface: String?
     public var border: String?
     public var font: String?
+    /// The colours series are drawn in, in order — see `DiagramColors.series`.
+    public var series: [String]?
     public var transparent: Bool?
     public var interactive: Bool?
 
@@ -23,6 +25,7 @@ public struct RenderOptions: Sendable {
         surface: String? = nil,
         border: String? = nil,
         font: String? = nil,
+        series: [String]? = nil,
         transparent: Bool? = nil,
         interactive: Bool? = nil
     ) {
@@ -34,6 +37,7 @@ public struct RenderOptions: Sendable {
         self.surface = surface
         self.border = border
         self.font = font
+        self.series = series
         self.transparent = transparent
         self.interactive = interactive
     }
@@ -48,6 +52,17 @@ public struct DiagramColors: Sendable {
     public var surface: String?
     public var border: String?
 
+    /// The colours series are drawn in — a pie's slices, a chart's bars and lines — in the
+    /// order they are used, repeating once the series outnumber them.
+    ///
+    /// `nil` derives them from `accent`, which is what this library has always done and
+    /// remains the right answer for a theme that names one accent and nothing else. It is
+    /// not the only reasonable palette, and until now it was the only reachable one: a
+    /// caller with a palette of its own — one shared with the rest of an application, or
+    /// chosen for a qualitative scale rather than a ramp of one hue — had no way to say so,
+    /// because every renderer derived its colours privately.
+    public var series: [String]?
+
     public init(
         bg: String,
         fg: String,
@@ -55,7 +70,8 @@ public struct DiagramColors: Sendable {
         accent: String? = nil,
         muted: String? = nil,
         surface: String? = nil,
-        border: String? = nil
+        border: String? = nil,
+        series: [String]? = nil
     ) {
         self.bg = bg
         self.fg = fg
@@ -64,6 +80,7 @@ public struct DiagramColors: Sendable {
         self.muted = muted
         self.surface = surface
         self.border = border
+        self.series = series
     }
 }
 
@@ -135,7 +152,8 @@ private func buildColors(_ options: RenderOptions) -> DiagramColors {
         accent: options.accent,
         muted: options.muted,
         surface: options.surface,
-        border: options.border
+        border: options.border,
+        series: options.series
     )
 }
 

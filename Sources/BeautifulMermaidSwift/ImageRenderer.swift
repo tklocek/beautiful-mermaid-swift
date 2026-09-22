@@ -64,6 +64,7 @@ public final class MermaidImageRenderer {
             muted: _hex(theme.effectiveMuted()),
             surface: _hex(theme.effectiveSurface()),
             border: _hex(theme.effectiveBorder()),
+            series: theme.seriesHex(),
             transparent: false
         )
 

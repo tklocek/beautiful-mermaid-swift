@@ -132,7 +132,10 @@ extension DiagramRenderer {
         }
     }
 
+    /// Through the theme, so a caller's palette reaches the drawing — and so this path and
+    /// the SVG one cannot answer differently, which is how a legend ends up disagreeing with
+    /// the slices beside it.
     private func _pieSliceHex(_ index: Int, accentHex: String, bgHex: String?) -> String {
-        getSeriesColor(index, accentHex, bgHex)
+        _hex(theme.seriesColor(at: index)) ?? getSeriesColor(index, accentHex, bgHex)
     }
 }
