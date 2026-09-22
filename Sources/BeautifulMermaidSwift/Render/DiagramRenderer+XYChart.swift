@@ -185,10 +185,10 @@ extension DiagramRenderer {
         }
     }
 
+    /// Through the theme, for `DiagramRenderer+PieChart._pieSliceHex`'s reason: one answer,
+    /// whichever renderer is asking.
     private func _xySeriesColor(_ index: Int, accentHex: String?, bgHex: String?) -> CGColor {
-        if index == 0 { return theme.effectiveAccent().cgColor }
-        let hex = getSeriesColor(index, accentHex ?? _hex(theme.effectiveAccent()) ?? "#3b82f6", bgHex)
-        return BMColor(hex: hex).cgColor
+        theme.seriesColor(at: index).cgColor
     }
 
     private func _mixCGColors(_ bg: CGColor, _ fg: CGColor, ratio: CGFloat) -> CGColor {

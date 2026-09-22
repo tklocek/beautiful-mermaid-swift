@@ -93,6 +93,21 @@ public func mixHexColors(_ bgHex: String, _ fgHex: String, _ ratio: Double) -> S
     )
 }
 
+/// The colour for series `index`: the caller's palette when there is one, and the derived
+/// ramp otherwise.
+///
+/// One function so that the two renderers — SVG and Core Graphics — cannot answer this
+/// differently, which is the kind of divergence that shows up as a chart whose legend does
+/// not match its bars.
+public func seriesColor(_ index: Int, palette: [String]?, accent: String, bg: String? = nil) -> String {
+    if let palette, !palette.isEmpty {
+        // Wraps rather than running out: a palette of eight and a chart of ten is a chart
+        // that repeats, which is better than a chart with two invisible series.
+        return palette[((index % palette.count) + palette.count) % palette.count]
+    }
+    return getSeriesColor(index, accent, bg)
+}
+
 public func getSeriesColor(_ index: Int, _ accentColor: String, _ bgColor: String? = nil) -> String {
     if index == 0 { return accentColor }
     let safeAccent = isValidHex(accentColor) ? accentColor : CHART_ACCENT_FALLBACK

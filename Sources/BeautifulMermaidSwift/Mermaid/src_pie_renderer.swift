@@ -48,7 +48,7 @@ public func renderPieChartSvg(
     ]
 
     for slice in chart.slices {
-        let color = getSeriesColor(slice.colorIndex, accent, colors.bg)
+        let color = seriesColor(slice.colorIndex, palette: colors.series, accent: accent, bg: colors.bg)
         let dataAttrs = "data-label=\"\(_pieEscapeXml(slice.label))\" data-value=\"\(slice.value)\" data-percent=\"\(_formatPiePercent(slice.percentage))\""
         if slice.percentage >= 0.9999 {
             parts.append(
@@ -72,7 +72,7 @@ public func renderPieChartSvg(
     }
 
     for slice in chart.slices where slice.percentage >= 0.045 {
-        let color = getSeriesColor(slice.colorIndex, accent, colors.bg)
+        let color = seriesColor(slice.colorIndex, palette: colors.series, accent: accent, bg: colors.bg)
         let labelColor = isDarkBackground(color) ? "#ffffff" : "#000000"
         parts.append(
             "<text x=\"\(_pieR(slice.labelX))\" y=\"\(_pieR(slice.labelY))\" text-anchor=\"middle\" " +
@@ -89,7 +89,7 @@ public func renderPieChartSvg(
     }
 
     for item in chart.legend {
-        let color = getSeriesColor(item.colorIndex, accent, colors.bg)
+        let color = seriesColor(item.colorIndex, palette: colors.series, accent: accent, bg: colors.bg)
         let text = chart.showData ? "\(item.label) \(_formatPieValue(item.value))" : item.label
         parts.append(
             "<rect x=\"\(_pieR(item.x))\" y=\"\(_pieR(item.y - 6))\" width=\"12\" height=\"12\" rx=\"2\" fill=\"\(color)\"/>"

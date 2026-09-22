@@ -51,7 +51,7 @@ public func renderXYChartSvg(
     let maxLinePoints = chart.lines.map(\.points.count).max() ?? 0
     let sparse = maxLinePoints > 0 && maxLinePoints <= 12
 
-    let chartCss = _chartStyles(chart, interactive, sparse, colors.accent, colors.bg)
+    let chartCss = _chartStyles(chart, interactive, sparse, colors.accent, colors.bg, colors.series)
     parts.append(chartCss.style)
 
     // 1. Dot grid
@@ -245,7 +245,7 @@ public func renderXYChartSvg(
 
 private func _chartStyles(
     _ chart: PositionedXYChart, _ interactive: Bool, _ sparse: Bool,
-    _ themeAccent: String?, _ bgColor: String?
+    _ themeAccent: String?, _ bgColor: String?, _ palette: [String]? = nil
 ) -> (style: String, defs: String) {
     let accentHex = themeAccent ?? CHART_ACCENT_FALLBACK
 
@@ -255,9 +255,12 @@ private func _chartStyles(
 
     var colorVarDefs: [String] = []
     for idx in colorIndices.sorted() {
-        let value = idx == 0
+        // Series 0 follows the theme's accent through a CSS variable, so a page that
+        // restyles the accent restyles the chart with it — but only while the palette is
+        // the derived one. A caller who supplied a palette meant *that* colour.
+        let value = idx == 0 && palette == nil
             ? "var(--accent, \(CHART_ACCENT_FALLBACK))"
-            : getSeriesColor(idx, accentHex, bgColor)
+            : seriesColor(idx, palette: palette, accent: accentHex, bg: bgColor)
         colorVarDefs.append("    --xychart-color-\(idx): \(value);")
         colorVarDefs.append("    --xychart-bar-fill-\(idx): color-mix(in srgb, var(--bg) 75%, var(--xychart-color-\(idx)) 25%);")
     }

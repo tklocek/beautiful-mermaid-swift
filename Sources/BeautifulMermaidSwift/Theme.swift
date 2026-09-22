@@ -20,6 +20,17 @@ public struct DiagramTheme: @unchecked Sendable, Equatable {
     public var lineWidth: CGFloat
     public var cornerRadius: CGFloat
 
+    /// The colours series are drawn in — a pie's slices, a chart's bars and lines — in the
+    /// order they are used, repeating once the series outnumber them.
+    ///
+    /// `nil` derives them from `accent`, which is what this library has always done: a ramp
+    /// of one hue at alternating lightness, obviously *of* its theme and the right answer
+    /// for a theme that names an accent and nothing else. It is not the only reasonable
+    /// palette — a qualitative scale spreads hue instead, so that two slices differ by more
+    /// than how pale they are — and until now it was the only reachable one, because every
+    /// renderer derived its colours privately.
+    public var series: [BMColor]?
+
     /// When `true`, the diagram background is not filled — useful for overlay/compositing
     public var transparent: Bool
 
@@ -32,9 +43,19 @@ public struct DiagramTheme: @unchecked Sendable, Equatable {
         _optionalColorEquals(lhs.surface, rhs.surface) &&
         _optionalColorEquals(lhs.border, rhs.border) &&
         lhs.font == rhs.font &&
+        _paletteEquals(lhs.series, rhs.series) &&
         lhs.lineWidth == rhs.lineWidth &&
         lhs.cornerRadius == rhs.cornerRadius &&
         lhs.transparent == rhs.transparent
+    }
+
+    private static func _paletteEquals(_ a: [BMColor]?, _ b: [BMColor]?) -> Bool {
+        switch (a, b) {
+        case (.none, .none): return true
+        case let (.some(a), .some(b)):
+            return a.count == b.count && zip(a, b).allSatisfy { $0.bmColorEquals($1) }
+        default: return false
+        }
     }
 
     private static func _optionalColorEquals(_ a: BMColor?, _ b: BMColor?) -> Bool {
@@ -72,6 +93,7 @@ public struct DiagramTheme: @unchecked Sendable, Equatable {
         surface: BMColor? = nil,
         border: BMColor? = nil,
         font: BMFont = BMFont.systemFont(ofSize: 14),
+        series: [BMColor]? = nil,
         lineWidth: CGFloat = 1.5,
         cornerRadius: CGFloat = 8,
         transparent: Bool = false
@@ -84,6 +106,7 @@ public struct DiagramTheme: @unchecked Sendable, Equatable {
         self.surface = surface
         self.border = border
         self.font = font
+        self.series = series
         self.lineWidth = lineWidth
         self.cornerRadius = cornerRadius
         self.transparent = transparent
@@ -103,6 +126,24 @@ public struct DiagramTheme: @unchecked Sendable, Equatable {
     public func effectiveMuted() -> BMColor { muted ?? background.mixed(with: foreground, amount: ColorMix.textMuted) }
     public func effectiveSurface() -> BMColor { surface ?? background.mixed(with: foreground, amount: ColorMix.nodeFill) }
     public func effectiveBorder() -> BMColor { border ?? background.mixed(with: foreground, amount: ColorMix.nodeStroke) }
+
+    /// The colour for series `index` — the supplied palette when there is one, and the
+    /// derived ramp otherwise. Wraps, so more series than colours repeats rather than
+    /// running out.
+    public func seriesColor(at index: Int) -> BMColor {
+        if let series, !series.isEmpty {
+            return series[((index % series.count) + series.count) % series.count]
+        }
+        if index == 0 { return effectiveAccent() }
+        let accent = _hex(effectiveAccent()) ?? CHART_ACCENT_FALLBACK
+        return BMColor(hex: getSeriesColor(index, accent, _hex(background)))
+    }
+
+    /// The palette as hex, for the SVG side — which speaks CSS rather than colours.
+    public func seriesHex() -> [String]? {
+        guard let series, !series.isEmpty else { return nil }
+        return series.map { _hex($0) ?? CHART_ACCENT_FALLBACK }
+    }
 
     public func effectiveTextSecondary() -> BMColor {
         background.mixed(with: foreground, amount: ColorMix.textSec)
