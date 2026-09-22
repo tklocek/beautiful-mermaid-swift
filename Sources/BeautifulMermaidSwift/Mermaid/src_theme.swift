@@ -300,15 +300,27 @@ open class original_src_theme {
         _ colors: DiagramColors,
         _ transparent: Bool? = nil
     ) -> String {
-        let styleVars = [
-            "--bg:\(colors.bg)",
-            "--fg:\(colors.fg)",
-            colors.line.map { "--line:\($0)" } ?? "",
-            colors.accent.map { "--accent:\($0)" } ?? "",
-            colors.muted.map { "--muted:\($0)" } ?? "",
-            colors.surface.map { "--surface:\($0)" } ?? "",
-            colors.border.map { "--border:\($0)" } ?? "",
-        ].filter { !$0.isEmpty }.joined(separator: ";")
+        // Built a line at a time rather than as one array literal. As a literal — seven
+        // elements mixing interpolation with `Optional.map { … } ?? ""`, then `filter` and
+        // `joined` chained onto it — this single expression took the type checker **2,950 ms**
+        // on a clean build, which is most of the time this file costs to compile and enough
+        // that a slower machine can give up on it entirely. Measured with
+        // `-warn-long-expression-type-checking`; it is the only expression in the library
+        // over 200 ms.
+        //
+        // The output is unchanged: an absent colour contributed an empty string that `filter`
+        // then removed, which is the same as not adding it.
+        var declarations = ["--bg:\(colors.bg)", "--fg:\(colors.fg)"]
+        func declare(_ name: String, _ value: String?) {
+            guard let value else { return }
+            declarations.append("--\(name):\(value)")
+        }
+        declare("line", colors.line)
+        declare("accent", colors.accent)
+        declare("muted", colors.muted)
+        declare("surface", colors.surface)
+        declare("border", colors.border)
+        let styleVars = declarations.joined(separator: ";")
 
         let bgStyle = (transparent ?? false) ? "" : ";background:var(--bg)"
         let widthStr = _formatNumber(width)
