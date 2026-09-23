@@ -34,6 +34,9 @@ public struct _PositionedEdgePayload: Sendable {
     public var points: [_PositionedPointPayload]
     public var labelPosition: _PositionedPointPayload?
     public var inlineStyle: [String: String]?
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int?
 }
 
 private func _asDict(_ value: Any?) -> [String: Any]? {
@@ -1119,7 +1122,8 @@ private func _extractPositionedGraph(
                 hasArrowEnd: edge.hasArrowEnd,
                 points: points,
                 labelPosition: finalLabelPos,
-                inlineStyle: _resolveEdgeStyle(edgeIndex: idx, graph: source)
+                inlineStyle: _resolveEdgeStyle(edgeIndex: idx, graph: source),
+                sourceLine: edge.sourceLine
             )
         )
     }

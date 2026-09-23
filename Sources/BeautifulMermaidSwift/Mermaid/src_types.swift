@@ -68,6 +68,9 @@ open class original_src_types {
         public var hasArrowStart: Bool
         public var hasArrowEnd: Bool
         public var inlineStyle: [String: String]?
+        /// The 1-based line of the source this was read from, for a caller that needs to
+        /// relate the drawing back to the text it came from. `nil` when it is not known.
+        public var sourceLine: Int?
 
         public init(
             source: String,
@@ -76,7 +79,8 @@ open class original_src_types {
             style: EdgeStyle,
             hasArrowStart: Bool,
             hasArrowEnd: Bool,
-            inlineStyle: [String: String]? = nil
+            inlineStyle: [String: String]? = nil,
+            sourceLine: Int? = nil
         ) {
             self.source = source
             self.target = target
@@ -85,6 +89,7 @@ open class original_src_types {
             self.hasArrowStart = hasArrowStart
             self.hasArrowEnd = hasArrowEnd
             self.inlineStyle = inlineStyle
+            self.sourceLine = sourceLine
         }
     }
 

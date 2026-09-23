@@ -29,6 +29,9 @@ public struct ErRelationship: Sendable {
     public var cardinality2: Cardinality
     public var label: String
     public var identifying: Bool
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int?
 }
 
 public struct PositionedErDiagram: Sendable {
@@ -58,6 +61,9 @@ public struct PositionedErRelationship: Sendable {
     public var label: String
     public var identifying: Bool
     public var points: [ErPoint]
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int?
 }
 
 public struct ErPoint: Sendable {
@@ -76,11 +82,15 @@ public enum ErParserError: Error, LocalizedError {
     }
 }
 
-public func parseErDiagram(_ lines: [String]) throws -> ErDiagram {
-    try _parseErDiagramEntry(lines)
+/// `sourceLines`, when given, says which line of the document each entry of `lines` came
+/// from — blank lines and comments are dropped before parsing, so the position in the array
+/// does not say it. Left out, the parts this reads report no line at all rather than a
+/// number that would be wrong.
+public func parseErDiagram(_ lines: [String], sourceLines: [Int] = []) throws -> ErDiagram {
+    try _parseErDiagramEntry(lines, sourceLines: sourceLines)
 }
 
-private func _parseErDiagramEntry(_ lines: [String]) throws -> ErDiagram {
+private func _parseErDiagramEntry(_ lines: [String], sourceLines: [Int] = []) throws -> ErDiagram {
     guard let header = lines.first else {
         return ErDiagram(entities: [], relationships: [])
     }
@@ -97,7 +107,9 @@ private func _parseErDiagramEntry(_ lines: [String]) throws -> ErDiagram {
         return diagram
     }
 
-    for line in lines.dropFirst() {
+    for (offset, line) in lines.dropFirst().enumerated() {
+        // `dropFirst` skips the header, so this entry is at `offset + 1` of the array.
+        let sourceLine = sourceLines[safe: offset + 1]
         let rawLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
         if rawLine.isEmpty {
             continue
@@ -126,6 +138,8 @@ private func _parseErDiagramEntry(_ lines: [String]) throws -> ErDiagram {
         if let rel = _parseRelationshipLine(rawLine) {
             _ = _ensureEntity(&entityMap, &entityOrder, rel.entity1)
             _ = _ensureEntity(&entityMap, &entityOrder, rel.entity2)
+            var rel = rel
+            rel.sourceLine = sourceLine
             diagram.relationships.append(rel)
         }
     }
@@ -249,7 +263,7 @@ open class original_src_er_parser {
 
     // Export inventory from TypeScript source:
     // - export function parseErDiagram
-    public static func parseErDiagram(_ lines: [String]) throws -> ErDiagram {
-        try _parseErDiagramEntry(lines)
+    public static func parseErDiagram(_ lines: [String], sourceLines: [Int] = []) throws -> ErDiagram {
+        try _parseErDiagramEntry(lines, sourceLines: sourceLines)
     }
 }

@@ -199,7 +199,8 @@ private func _extractErLayout(
                 cardinality2: rel.cardinality2,
                 label: rel.label,
                 identifying: rel.identifying,
-                points: points
+                points: points,
+                sourceLine: rel.sourceLine
             )
         )
     }
