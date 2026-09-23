@@ -1,14 +1,19 @@
 // Ported from original/src/xychart/parser.ts
 import Foundation
 
-public func parseXYChart(_ lines: [String]) -> XYChart {
+/// `sourceLines`, when given, says which line of the document each entry of `lines` came
+/// from — blank lines and comments are dropped before parsing, so the position in the array
+/// does not say it. Left out, the parts this reads report no line at all rather than a
+/// number that would be wrong.
+public func parseXYChart(_ lines: [String], sourceLines: [Int] = []) -> XYChart {
     var xAxis = XYAxis()
     var yAxis = XYAxis()
     var series: [XYChartSeries] = []
     var title: String?
     var horizontal = false
 
-    for line in lines {
+    for (offset, line) in lines.enumerated() {
+        let sourceLine = sourceLines.indices.contains(offset) ? sourceLines[offset] : nil
         // Header line — detect horizontal
         if line.range(of: #"^xychart(-beta)?\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
             if line.range(of: #"\bhorizontal\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
@@ -61,7 +66,7 @@ public func parseXYChart(_ lines: [String]) -> XYChart {
             let sub = String(line[match])
             if let bracketStart = sub.firstIndex(of: "["), let bracketEnd = sub.firstIndex(of: "]") {
                 let nums = _parseNumericArray(String(sub[sub.index(after: bracketStart)..<bracketEnd]))
-                series.append(XYChartSeries(type: .bar, data: nums))
+                series.append(XYChartSeries(type: .bar, data: nums, sourceLine: sourceLine))
             }
             continue
         }
@@ -71,7 +76,7 @@ public func parseXYChart(_ lines: [String]) -> XYChart {
             let sub = String(line[match])
             if let bracketStart = sub.firstIndex(of: "["), let bracketEnd = sub.firstIndex(of: "]") {
                 let nums = _parseNumericArray(String(sub[sub.index(after: bracketStart)..<bracketEnd]))
-                series.append(XYChartSeries(type: .line, data: nums))
+                series.append(XYChartSeries(type: .line, data: nums, sourceLine: sourceLine))
             }
             continue
         }

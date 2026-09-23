@@ -208,7 +208,8 @@ private func _layoutHorizontal(_ chart: XYChart) -> PositionedXYChart {
                     x: min(baseX, valX), y: by,
                     width: abs(valX - baseX), height: singleBarH,
                     value: s.data[i], label: catLabels[i],
-                    seriesIndex: bIdx, colorIndex: colorMap[seriesArrayIdx]
+                    seriesIndex: bIdx, colorIndex: colorMap[seriesArrayIdx],
+                    sourceLine: s.sourceLine
                 ))
             }
             bIdx += 1
@@ -224,7 +225,8 @@ private func _layoutHorizontal(_ chart: XYChart) -> PositionedXYChart {
             let v = s.data[i]
             return LinePoint(x: valueScale(v), y: catScale(i), value: v, label: catLabels[i])
         }
-        lines.append(PositionedLine(points: points, seriesIndex: lineIdx, colorIndex: colorMap[seriesIdx]))
+        lines.append(PositionedLine(points: points, seriesIndex: lineIdx,
+                                    colorIndex: colorMap[seriesIdx], sourceLine: s.sourceLine))
         lineIdx += 1
     }
 
@@ -341,7 +343,8 @@ private func _layoutBars(
                 x: bx, y: min(valY, baseY),
                 width: singleBarW, height: abs(baseY - valY),
                 value: s.data[i], label: catLabels[i],
-                seriesIndex: bIdx, colorIndex: colorMap[seriesArrayIdx]
+                seriesIndex: bIdx, colorIndex: colorMap[seriesArrayIdx],
+                sourceLine: s.sourceLine
             ))
         }
         bIdx += 1
@@ -361,7 +364,8 @@ private func _layoutLines(
             let v = s.data[i]
             return LinePoint(x: xScale(i), y: yScale(v), value: v, label: catLabels[i])
         }
-        lines.append(PositionedLine(points: points, seriesIndex: lineIdx, colorIndex: colorMap[seriesArrayIdx]))
+        lines.append(PositionedLine(points: points, seriesIndex: lineIdx,
+                                    colorIndex: colorMap[seriesArrayIdx], sourceLine: s.sourceLine))
         lineIdx += 1
     }
     return lines
@@ -373,7 +377,9 @@ private func _buildLegendItems(_ chart: XYChart, _ centerX: Double, _ y: Double,
     for si in 0..<chart.series.count {
         let s = chart.series[si]
         let label = s.type == .bar ? "Bar \(barIdx + 1)" : "Line \(lineIdx + 1)"
-        items.append(XYLegendItem(label: label, x: 0, y: y, type: s.type, seriesIndex: s.type == .bar ? barIdx : lineIdx, colorIndex: colorMap[si]))
+        items.append(XYLegendItem(label: label, x: 0, y: y, type: s.type,
+                                  seriesIndex: s.type == .bar ? barIdx : lineIdx,
+                                  colorIndex: colorMap[si], sourceLine: s.sourceLine))
         if s.type == .bar { barIdx += 1 }
         else { lineIdx += 1 }
     }

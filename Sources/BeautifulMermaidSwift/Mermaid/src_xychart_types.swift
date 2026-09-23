@@ -23,10 +23,14 @@ public struct XYAxis: Sendable {
 public struct XYChartSeries: Sendable {
     public var type: XYSeriesType
     public var data: [Double]
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int?
 
-    public init(type: XYSeriesType, data: [Double]) {
+    public init(type: XYSeriesType, data: [Double], sourceLine: Int? = nil) {
         self.type = type
         self.data = data
+        self.sourceLine = sourceLine
     }
 }
 
@@ -151,12 +155,18 @@ public struct PositionedBar: Sendable {
     public var label: String?
     public var seriesIndex: Int
     public var colorIndex: Int
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int? = nil
 }
 
 public struct PositionedLine: Sendable {
     public var points: [LinePoint]
     public var seriesIndex: Int
     public var colorIndex: Int
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int? = nil
 }
 
 public struct LinePoint: Sendable {
@@ -180,4 +190,7 @@ public struct XYLegendItem: Sendable {
     public var type: XYSeriesType
     public var seriesIndex: Int
     public var colorIndex: Int
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int? = nil
 }

@@ -68,7 +68,8 @@ public func layoutPieChart(_ chart: PieChart, _ options: RenderOptions = RenderO
             midAngle: mid,
             labelX: centerX + cos(mid) * labelRadius,
             labelY: centerY + sin(mid) * labelRadius,
-            colorIndex: index
+            colorIndex: index,
+            sourceLine: slice.sourceLine
         ))
         legend.append(PieLegendItem(
             label: slice.label,

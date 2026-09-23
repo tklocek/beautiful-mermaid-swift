@@ -61,6 +61,9 @@ public struct SequenceMessage: Sendable {
     public var deactivate: Bool
     /// 1-based index assigned by `autonumber`; nil when autonumbering is off.
     public var sequenceNumber: Int? = nil
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int? = nil
 }
 
 public extension SequenceBlock {
@@ -166,6 +169,9 @@ public struct PositionedSequenceMessage: Sendable {
     public var isSelf: Bool
     /// 1-based index assigned by `autonumber`; nil when autonumbering is off.
     public var sequenceNumber: Int? = nil
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int? = nil
 }
 
 public struct SequenceActivation: Sendable {
@@ -228,11 +234,15 @@ private struct _OpenBlock {
     var depth: Int
 }
 
-public func parseSequenceDiagram(_ lines: [String]) throws -> SequenceDiagram {
-    try _parseSequenceDiagramEntry(lines)
+/// `sourceLines`, when given, says which line of the document each entry of `lines` came
+/// from — blank lines and comments are dropped before parsing, so the position in the array
+/// does not say it. Left out, the parts this reads report no line at all rather than a
+/// number that would be wrong.
+public func parseSequenceDiagram(_ lines: [String], sourceLines: [Int] = []) throws -> SequenceDiagram {
+    try _parseSequenceDiagramEntry(lines, sourceLines: sourceLines)
 }
 
-private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDiagram {
+private func _parseSequenceDiagramEntry(_ lines: [String], sourceLines: [Int] = []) throws -> SequenceDiagram {
     guard let header = lines.first else {
         return SequenceDiagram(actors: [], messages: [], blocks: [], notes: [])
     }
@@ -256,7 +266,9 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
         return diagram
     }
 
-    for rawLine in lines.dropFirst() {
+    for (offset, rawLine) in lines.dropFirst().enumerated() {
+        // `dropFirst` skips the header, so this entry is at `offset + 1` of the array.
+        let sourceLine = sourceLines.indices.contains(offset + 1) ? sourceLines[offset + 1] : nil
         let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
         if line.isEmpty {
             continue
@@ -421,6 +433,7 @@ private func _parseSequenceDiagramEntry(_ lines: [String]) throws -> SequenceDia
         }
 
         if var msg = _parseSequenceMessage(line) {
+            msg.sourceLine = sourceLine
             if let number = autonumberNext {
                 msg.sequenceNumber = number
                 autonumberNext = number + autonumberStep
