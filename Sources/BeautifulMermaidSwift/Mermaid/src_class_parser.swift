@@ -36,6 +36,9 @@ public struct ClassRelationship: Sendable {
     public var label: String?
     public var fromCardinality: String?
     public var toCardinality: String?
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int?
 }
 
 public struct ClassNamespace: Sendable {
@@ -75,6 +78,9 @@ public struct PositionedClassRelationship: Sendable {
     public var toCardinality: String?
     public var points: [ClassPoint]
     public var labelPosition: ClassPoint?
+    /// The 1-based line of the source this was read from, for a caller that needs to relate
+    /// the drawing back to the text it came from. `nil` when it is not known.
+    public var sourceLine: Int?
 }
 
 public struct ClassPoint: Sendable {
@@ -98,11 +104,15 @@ private struct _ParsedMember {
     var isMethod: Bool
 }
 
-public func parseClassDiagram(_ lines: [String]) throws -> ClassDiagram {
-    try _parseClassDiagramEntry(lines)
+/// `sourceLines`, when given, says which line of the document each entry of `lines` came
+/// from — blank lines and comments are dropped before parsing, so the position in the array
+/// does not say it. Left out, the parts this reads report no line at all rather than a
+/// number that would be wrong.
+public func parseClassDiagram(_ lines: [String], sourceLines: [Int] = []) throws -> ClassDiagram {
+    try _parseClassDiagramEntry(lines, sourceLines: sourceLines)
 }
 
-private func _parseClassDiagramEntry(_ lines: [String]) throws -> ClassDiagram {
+private func _parseClassDiagramEntry(_ lines: [String], sourceLines: [Int] = []) throws -> ClassDiagram {
     guard let header = lines.first else {
         return ClassDiagram(classes: [], relationships: [], namespaces: [])
     }
@@ -121,7 +131,9 @@ private func _parseClassDiagramEntry(_ lines: [String]) throws -> ClassDiagram {
         return diagram
     }
 
-    for line in lines.dropFirst() {
+    for (offset, line) in lines.dropFirst().enumerated() {
+        // `dropFirst` skips the header, so this entry is at `offset + 1` of the array.
+        let sourceLine = sourceLines[safe: offset + 1]
         let rawLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
         if rawLine.isEmpty {
             continue
@@ -217,6 +229,8 @@ private func _parseClassDiagramEntry(_ lines: [String]) throws -> ClassDiagram {
         if let rel = _parseRelationship(rawLine) {
             _ = _ensureClass(&classMap, &classOrder, rel.from)
             _ = _ensureClass(&classMap, &classOrder, rel.to)
+            var rel = rel
+            rel.sourceLine = sourceLine
             diagram.relationships.append(rel)
             continue
         }
@@ -389,7 +403,7 @@ open class original_src_class_parser {
 
     // Export inventory from TypeScript source:
     // - export function parseClassDiagram
-    public static func parseClassDiagram(_ lines: [String]) throws -> ClassDiagram {
-        try _parseClassDiagramEntry(lines)
+    public static func parseClassDiagram(_ lines: [String], sourceLines: [Int] = []) throws -> ClassDiagram {
+        try _parseClassDiagramEntry(lines, sourceLines: sourceLines)
     }
 }

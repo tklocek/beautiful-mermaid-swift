@@ -110,10 +110,21 @@ public func parseMermaid(_ text: String) throws -> MermaidGraph {
 }
 
 private func _parseMermaidEntry(_ text: String) throws -> MermaidGraph {
-    let lines = text
-        .components(separatedBy: CharacterSet(charactersIn: "\n;"))
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty && !$0.hasPrefix("%%") }
+    // **Split by line first, then by semicolon inside it.** A flowchart may write several
+    // statements on one line — `A --> B; B --> C` — so the two are not the same split, and
+    // doing them at once loses which line a fragment came from. Every fragment of a line
+    // carries that line's own number.
+    var lines: [String] = [], sourceLines: [Int] = []
+    for (index, raw) in text.components(separatedBy: "\n").enumerated() {
+        var line = raw
+        if line.hasSuffix("\r") { line.removeLast() }
+        for fragment in line.components(separatedBy: ";") {
+            let trimmed = fragment.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("%%") else { continue }
+            lines.append(trimmed)
+            sourceLines.append(index + 1)
+        }
+    }
 
     guard !lines.isEmpty else {
         throw _ParserEntryError.emptyDiagram
@@ -124,17 +135,17 @@ private func _parseMermaidEntry(_ text: String) throws -> MermaidGraph {
     let diagramType: DiagramType
 
     if _regexTest(#"^stateDiagram(-v2)?\s*$"#, header, caseInsensitive: true) {
-        parsed = try _parseStateDiagram(lines)
+        parsed = try _parseStateDiagram(lines, sourceLines)
         diagramType = .stateDiagram
     } else {
-        parsed = try _parseFlowchart(lines)
+        parsed = try _parseFlowchart(lines, sourceLines)
         diagramType = .flowchart
     }
 
     return MermaidGraph(type: diagramType, payload: parsed)
 }
 
-private func _parseFlowchart(_ lines: [String]) throws -> ParsedGraph {
+private func _parseFlowchart(_ lines: [String], _ sourceLines: [Int] = []) throws -> ParsedGraph {
     guard let header = lines.first else {
         throw _ParserEntryError.invalidHeader("")
     }
@@ -173,7 +184,9 @@ private func _parseFlowchart(_ lines: [String]) throws -> ParsedGraph {
         }
     }
 
-    for line in lines.dropFirst() {
+    for (offset, line) in lines.dropFirst().enumerated() {
+        // `dropFirst` skips the header, so this entry is at `offset + 1` of the array.
+        let sourceLine = sourceLines[safe: offset + 1]
         if let classDefMatch = _regexGroups(#"^classDef\s+(\w+)\s+(.+)$"#, line),
            let name = classDefMatch[safe: 1],
            let propsStr = classDefMatch[safe: 2]
@@ -271,13 +284,14 @@ private func _parseFlowchart(_ lines: [String]) throws -> ParsedGraph {
             continue
         }
 
-        _parseEdgeLine(line, graph: &graph, subgraphStack: &subgraphStack)
+        _parseEdgeLine(line, graph: &graph, subgraphStack: &subgraphStack,
+                       sourceLine: sourceLine)
     }
 
     return graph.toParsedGraph()
 }
 
-private func _parseStateDiagram(_ lines: [String]) throws -> ParsedGraph {
+private func _parseStateDiagram(_ lines: [String], _ sourceLines: [Int] = []) throws -> ParsedGraph {
     var graph = _WorkingGraph(direction: .TD)
 
     var compositeStack: [ParsedSubgraph] = []
@@ -289,7 +303,8 @@ private func _parseStateDiagram(_ lines: [String]) throws -> ParsedGraph {
         return graph.toParsedGraph()
     }
 
-    for line in lines.dropFirst() {
+    for (offset, line) in lines.dropFirst().enumerated() {
+        let sourceLine = sourceLines[safe: offset + 1]
         if let dirMatch = _regexGroups(#"^direction\s+(TD|TB|LR|BT|RL)\s*$"#, line, caseInsensitive: true),
            let dirToken = dirMatch[safe: 1],
            let direction = _parseDirection(dirToken)
@@ -388,7 +403,8 @@ private func _parseStateDiagram(_ lines: [String]) throws -> ParsedGraph {
                     label: edgeLabel,
                     style: .solid,
                     hasArrowStart: false,
-                    hasArrowEnd: true
+                    hasArrowEnd: true,
+                    sourceLine: sourceLine
                 )
             )
             continue
@@ -447,7 +463,8 @@ private func _parseStyleProps(_ propsStr: String) -> [String: String] {
     return props
 }
 
-private func _parseEdgeLine(_ line: String, graph: inout _WorkingGraph, subgraphStack: inout [ParsedSubgraph]) {
+private func _parseEdgeLine(_ line: String, graph: inout _WorkingGraph,
+                            subgraphStack: inout [ParsedSubgraph], sourceLine: Int? = nil) {
     var remaining = line.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let firstGroup = _consumeNodeGroup(remaining, graph: &graph, subgraphStack: &subgraphStack), !firstGroup.ids.isEmpty else {
         return
@@ -504,7 +521,8 @@ private func _parseEdgeLine(_ line: String, graph: inout _WorkingGraph, subgraph
                         label: edgeLabel,
                         style: style,
                         hasArrowStart: hasArrowStart,
-                        hasArrowEnd: hasArrowEnd
+                        hasArrowEnd: hasArrowEnd,
+                        sourceLine: sourceLine
                     )
                 )
             }

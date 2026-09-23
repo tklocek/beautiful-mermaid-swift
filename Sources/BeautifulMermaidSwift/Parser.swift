@@ -49,11 +49,11 @@ public enum MermaidParser {
             return MermaidGraph(type: .sequenceDiagram, payload: parsed)
         }
         if firstLine.hasPrefix("classdiagram") {
-            let parsed = try parseClassDiagram(lines)
+            let parsed = try parseClassDiagram(lines, sourceLines: sourceLines)
             return MermaidGraph(type: .classDiagram, payload: parsed)
         }
         if firstLine.hasPrefix("erdiagram") {
-            let parsed = try parseErDiagram(lines)
+            let parsed = try parseErDiagram(lines, sourceLines: sourceLines)
             return MermaidGraph(type: .erDiagram, payload: parsed)
         }
         if firstLine.hasPrefix("xychart") {

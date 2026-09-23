@@ -222,7 +222,8 @@ private func extractClassLayout(
                 fromCardinality: rel.fromCardinality,
                 toCardinality: rel.toCardinality,
                 points: points,
-                labelPosition: labelPosition
+                labelPosition: labelPosition,
+                sourceLine: rel.sourceLine
             )
         )
     }
