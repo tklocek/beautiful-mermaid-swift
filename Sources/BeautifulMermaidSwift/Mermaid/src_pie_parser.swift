@@ -5,12 +5,16 @@ func _isPieChartHeader(_ line: String) -> Bool {
     line.range(of: #"^pie(?:chart)?(?:\s|$)"#, options: [.regularExpression, .caseInsensitive]) != nil
 }
 
-public func parsePieChart(_ lines: [String]) -> PieChart {
+/// `sourceLines`, when given, says which line of the document each entry of `lines` came
+/// from — blank lines and comments are dropped before parsing, so the position in the array
+/// does not say it. Left out, the parts this reads report no line at all rather than a
+/// number that would be wrong.
+public func parsePieChart(_ lines: [String], sourceLines: [Int] = []) -> PieChart {
     var title: String?
     var showData = false
     var slices: [PieChartSlice] = []
 
-    for line in lines {
+    for (offset, line) in lines.enumerated() {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { continue }
 
@@ -36,7 +40,8 @@ public func parsePieChart(_ lines: [String]) -> PieChart {
             continue
         }
 
-        if let slice = _parsePieSlice(trimmed) {
+        if var slice = _parsePieSlice(trimmed) {
+            slice.sourceLine = sourceLines.indices.contains(offset) ? sourceLines[offset] : nil
             slices.append(slice)
         }
     }
