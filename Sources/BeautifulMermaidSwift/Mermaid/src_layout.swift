@@ -1007,10 +1007,73 @@ private func _resolveEdgeStyle(edgeIndex: Int, graph: _ParsedGraph) -> [String: 
     return result
 }
 
+/// A graph with its loops opened for layout: the edges that go back against the flow, turned
+/// round, and which ones they were.
+///
+/// **Why not leave the loop to ELK.** ELK breaks cycles itself, but its default breaker
+/// (`GREEDY`) chooses by in- and out-degree, not by what was written: in a chain closed by one
+/// edge back to its start — `A --> B --> … --> E`, then `E --> A` — every node has one edge in
+/// and one out, and it can turn the *first* edge round instead of the last. The start then lays
+/// out at the bottom and the whole diagram reads upside down. The breakers that follow the
+/// written order (`DEPTH_FIRST`, `MODEL_ORDER`) cannot be asked for: this port parses option
+/// values by their spelling and does not know theirs.
+///
+/// So the loop is opened here, the way Mermaid's own layout does it: a depth-first walk from
+/// each node in the order it was declared, following edges in the order they were written,
+/// and an edge reaching a node still on the walk's path is an edge going back. Turned round,
+/// the graph has no cycle and ELK keeps everything else as written; the edge is turned back
+/// when its route is read (`_extractPositionedGraph`), so it is drawn from where it was
+/// written from. A self-loop is left alone — ELK draws those itself.
+private func _openingLoops(_ graph: _ParsedGraph) -> (graph: _ParsedGraph, reversed: Set<Int>) {
+    var outgoing: [String: [Int]] = [:]
+    var order: [String] = graph.nodesInOrder.map(\.id)
+    var known = Set(order)
+    for (index, edge) in graph.edges.enumerated() where edge.source != edge.target {
+        outgoing[edge.source, default: []].append(index)
+        // An edge may name a subgraph, which is not among the nodes.
+        for id in [edge.source, edge.target] where known.insert(id).inserted { order.append(id) }
+    }
+    enum Mark { case onPath, done }
+    var marks: [String: Mark] = [:]
+    var reversed = Set<Int>()
+    // Iterative, so a long chain in a large document cannot run out of stack.
+    for root in order where marks[root] == nil {
+        var stack: [(id: String, next: Int)] = [(root, 0)]
+        marks[root] = .onPath
+        while let top = stack.last {
+            let edges = outgoing[top.id] ?? []
+            guard top.next < edges.count else {
+                marks[top.id] = .done
+                stack.removeLast()
+                continue
+            }
+            stack[stack.count - 1].next += 1
+            let index = edges[top.next]
+            let target = graph.edges[index].target
+            switch marks[target] {
+            case .onPath: reversed.insert(index)
+            case .done: break
+            case nil:
+                marks[target] = .onPath
+                stack.append((target, 0))
+            }
+        }
+    }
+    guard !reversed.isEmpty else { return (graph, []) }
+    var opened = graph
+    for index in reversed {
+        let edge = opened.edges[index]
+        opened.edges[index].source = edge.target
+        opened.edges[index].target = edge.source
+    }
+    return (opened, reversed)
+}
+
 private func _extractPositionedGraph(
     _ source: _ParsedGraph,
     _ laidOut: _ElkNode,
-    diagramType: DiagramType
+    diagramType: DiagramType,
+    reversed: Set<Int> = []
 ) -> PositionedGraph {
     let nodeById = Dictionary(source.nodesInOrder.map { ($0.id, $0.node) }, uniquingKeysWith: { _, last in last })
     let graphHeight = _asDouble(laidOut["height"]) ?? 0
@@ -1090,6 +1153,10 @@ private func _extractPositionedGraph(
                 points.append(contentsOf: incoming)
             }
         }
+
+        // An edge turned round for layout (`_openingLoops`) was routed from its target to its
+        // source; it is drawn from where it was written from.
+        if reversed.contains(idx) { points.reverse() }
 
         // Label position from ELK, or fall back to path midpoint later
         let labelPos = seg?.labelPosition
@@ -1241,13 +1308,14 @@ private func _layoutGraphSyncWithConfig(
     guard let parsed = graph.payload as? _ParsedGraph else {
         return PositionedGraph(diagram: graph)
     }
+    let (opened, reversed) = _openingLoops(parsed)
 
     var elkGraph: _ElkNode
     if !parsed.subgraphs.isEmpty {
         let hasDirectionOverride = parsed.subgraphs.contains(where: { $0.direction != nil })
-        elkGraph = hasDirectionOverride ? _buildElkGraph(parsed) : _buildElkGraphNoCrossEdges(parsed)
+        elkGraph = hasDirectionOverride ? _buildElkGraph(opened) : _buildElkGraphNoCrossEdges(opened)
     } else {
-        elkGraph = _buildElkGraph(parsed)
+        elkGraph = _buildElkGraph(opened)
     }
 
     // Override ELK spacing options with LayoutConfig values
@@ -1255,12 +1323,12 @@ private func _layoutGraphSyncWithConfig(
 
     do {
         let laidOut = try elkLayoutSync(elkGraph)
-        return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type)
+        return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type, reversed: reversed)
     } catch {
-        var flatGraph = _buildFlatElkGraph(parsed)
+        var flatGraph = _buildFlatElkGraph(opened)
         _applyLayoutConfig(config, to: &flatGraph)
         let laidOut = try elkLayoutSync(flatGraph)
-        return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type)
+        return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type, reversed: reversed)
     }
 }
 
@@ -1536,6 +1604,7 @@ private func _layoutGraphSyncFromLayoutEngine(
     guard let parsed = graph.payload as? _ParsedGraph else {
         return PositionedGraph(diagram: graph)
     }
+    let (opened, reversed) = _openingLoops(parsed)
     // Matching TS: use SEPARATE when any subgraph has a direction override,
     // INCLUDE_CHILDREN otherwise (simpler cross-hierarchy edge routing).
     if !parsed.subgraphs.isEmpty {
@@ -1543,25 +1612,25 @@ private func _layoutGraphSyncFromLayoutEngine(
         let elkGraph: _ElkNode
         if hasDirectionOverride {
             // SEPARATE mode: port-based edge splitting for proper direction handling
-            elkGraph = _buildElkGraph(parsed)
+            elkGraph = _buildElkGraph(opened)
         } else {
             // INCLUDE_CHILDREN mode: ELK handles cross-hierarchy edges natively
-            elkGraph = _buildElkGraphNoCrossEdges(parsed)
+            elkGraph = _buildElkGraphNoCrossEdges(opened)
         }
         do {
             let laidOut = try elkLayoutSync(elkGraph)
-            return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type)
+            return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type, reversed: reversed)
         } catch {
             // Fallback: fully flat layout
-            let flatGraph = _buildFlatElkGraph(parsed)
+            let flatGraph = _buildFlatElkGraph(opened)
             let laidOut = try elkLayoutSync(flatGraph)
-            return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type)
+            return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type, reversed: reversed)
         }
     }
     // No subgraphs — use the standard flat graph builder
-    let elkGraph = _buildElkGraph(parsed)
+    let elkGraph = _buildElkGraph(opened)
     let laidOut = try elkLayoutSync(elkGraph)
-    return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type)
+    return _extractPositionedGraph(parsed, laidOut, diagramType: graph.type, reversed: reversed)
 }
 
 private func _layoutGraphWithDiagnosticsSyncFromLayoutEngine(
