@@ -22,6 +22,8 @@ private struct _WorkingGraph {
     var edges: [ParsedEdge] = []
     var subgraphs: [ParsedSubgraph] = []
     var subgraphIds: Set<String> = []
+    /// Every node a closed subgraph holds; see `close(_:enclosedBy:)`.
+    var claimedNodeIds: Set<String> = []
     var classDefs: [String: [String: String]] = [:]
     var classAssignments: [String: String] = [:]
     var nodeStyles: [String: [String: String]] = [:]
@@ -33,6 +35,24 @@ private struct _WorkingGraph {
             nodeOrder.append(node.id)
         }
         nodesById[node.id] = node
+    }
+
+    /// Files a subgraph that has just been closed, under the one still open around it or at
+    /// the top level, keeping only the nodes no earlier-closed subgraph holds.
+    ///
+    /// A node may be written inside several subgraphs, and Mermaid gives it to the first that
+    /// closes (`flowDb.addSubGraph` drops whatever an earlier subgraph already has): an inner
+    /// subgraph beats the one around it, an earlier sibling beats a later one, and the top
+    /// level never claims anything. One owner is also what the layout needs — a node handed to
+    /// ELK as the child of two compound nodes is one identifier defined twice.
+    mutating func close(_ subgraph: ParsedSubgraph, enclosedBy parent: ParsedSubgraph?) {
+        subgraph.nodeIds.removeAll { claimedNodeIds.contains($0) }
+        claimedNodeIds.formUnion(subgraph.nodeIds)
+        if let parent {
+            parent.children.append(subgraph)
+        } else {
+            subgraphs.append(subgraph)
+        }
     }
 
     mutating func mergeNodeStyle(_ id: String, _ props: [String: String]) {
@@ -273,13 +293,8 @@ private func _parseFlowchart(_ lines: [String], _ sourceLines: [Int] = []) throw
         }
 
         if line == "end" {
-            let completed = subgraphStack.popLast()
-            if let completed {
-                if !subgraphStack.isEmpty {
-                    subgraphStack[subgraphStack.count - 1].children.append(completed)
-                } else {
-                    graph.subgraphs.append(completed)
-                }
+            if let completed = subgraphStack.popLast() {
+                graph.close(completed, enclosedBy: subgraphStack.last)
             }
             continue
         }
@@ -351,13 +366,8 @@ private func _parseStateDiagram(_ lines: [String], _ sourceLines: [Int] = []) th
         }
 
         if line == "}" {
-            let completed = compositeStack.popLast()
-            if let completed {
-                if !compositeStack.isEmpty {
-                    compositeStack[compositeStack.count - 1].children.append(completed)
-                } else {
-                    graph.subgraphs.append(completed)
-                }
+            if let completed = compositeStack.popLast() {
+                graph.close(completed, enclosedBy: compositeStack.last)
             }
             continue
         }
@@ -578,7 +588,10 @@ private func _consumeNode(_ text: String, graph: inout _WorkingGraph, subgraphSt
        let bareId = bare[safe: 1]
     {
         id = bareId
-        if graph.nodesById[bareId] == nil && !graph.subgraphIds.contains(bareId) {
+        // A bare mention of a known node still places it: Mermaid counts every mention inside
+        // a subgraph, however the node is written. A subgraph's own name is an edge endpoint,
+        // not a node.
+        if !graph.subgraphIds.contains(bareId) {
             _registerNode(&graph, &subgraphStack, ParsedNode(id: bareId, label: bareId, shape: .rectangle))
         }
         remaining = String(text.dropFirst(full.count))
