@@ -285,11 +285,11 @@ private func _buildElkGraph(_ graph: _ParsedGraph) -> _ElkNode {
 
     // Recursive builder for subgraph compound nodes
     func buildSubgraphNode(_ sub: original_src_types.MermaidSubgraph) -> [String: Any] {
-        let directNodeIds = sub.nodeIds.filter { nodeId in
-            !sub.children.contains { child in
-                _subgraphContainsNode(child, nodeId: nodeId)
-            }
-        }
+        // Only the nodes this subgraph owns. ELK indexes shapes by identifier, so a node
+        // emitted under two compound nodes is defined twice, and the edges of the first copy
+        // leave from the second. The parser gives each node one owner; a graph built by hand
+        // may not.
+        let directNodeIds = sub.nodeIds.filter { nodeToSubgraph[$0] == sub.id }
 
         var children: [[String: Any]] = []
         for nodeId in directNodeIds {
@@ -412,11 +412,6 @@ private func _allNodeIds(in sub: original_src_types.MermaidSubgraph) -> Set<Stri
         ids.formUnion(_allNodeIds(in: child))
     }
     return ids
-}
-
-private func _subgraphContainsNode(_ sub: original_src_types.MermaidSubgraph, nodeId: String) -> Bool {
-    if sub.nodeIds.contains(nodeId) { return true }
-    return sub.children.contains { _subgraphContainsNode($0, nodeId: nodeId) }
 }
 
 public struct _PositionedGroupPayload: Sendable {
@@ -1452,9 +1447,8 @@ private func _buildElkGraphNoCrossEdges(_ graph: _ParsedGraph) -> _ElkNode {
     let rootEdges = rootLevelEdges + crossHierarchyEdges
 
     func buildSubgraphNode(_ sub: original_src_types.MermaidSubgraph) -> [String: Any] {
-        let directNodeIds = sub.nodeIds.filter { nodeId in
-            !sub.children.contains { child in _subgraphContainsNode(child, nodeId: nodeId) }
-        }
+        // One owner per node, for the reason given in `_buildElkGraph`.
+        let directNodeIds = sub.nodeIds.filter { _deepestSubgraph(for: $0, in: graph.subgraphs) == sub.id }
         var children: [[String: Any]] = []
         for nodeId in directNodeIds {
             guard let node = nodeById[nodeId] else { continue }
